@@ -8,6 +8,16 @@ from bitcoin.base58 import encode as b58encode, decode as b58decode
 def hashfunc(msg):
 	return sha256(msg).digest()
 
+eba = bytearray('')
+def ADDBYTEARRAYS(a,b,carry=0):
+	if (a == eba or b == eba) and carry == 0: return a + b
+	if a == eba and b == eba and carry == 1: return bytearray([carry])
+	elif a == eba: return b[:-1] + bytearray([b[-1] + carry])
+	elif b == eba: return a[:-1] + bytearray([a[-1] + carry])
+	s = a[-1] + b[-1] + carry
+	d = s % 256
+	c = s/256
+	return ADDBYTEARRAYS(a[:-1],b[:-1],c) + bytearray([d])
 
 class BANT:
 	'''Byte Array Number Thing
@@ -53,7 +63,7 @@ class BANT:
 		
 	# do I need to do the r___ corresponding functions? (__radd__ for example)
 	def __add__(self, other):
-		return BANT(i2h(int(self) + int(other)))
+		return BANT(ADDBYTEARRAYS(self.this, other.this))
 	def __sub__(self, other):
 		return BANT(i2h(int(self) - int(other)))
 	def __mul__(self, other):
@@ -98,6 +108,7 @@ class BANT:
 	def increment(self, by=1):
 		return BANT(i2h(int(self) + 1))
 		
+		
 
 def DECODEBANT(b58s):
 	return BANT(b58decode(b58s))
@@ -106,81 +117,6 @@ def ENCODEBANT(b):
 	
 
 
-
-
-	
-def RLP_WRAP_DESERIALIZE(rlpIn):
-	if rlpIn[0] >= 0xc0:
-		if rlpIn[0] > 0xf7:
-			sublenlen = rlpIn[0].int() - 0xf7
-			sublen = rlpIn[1:sublenlen+1].int()
-			msg = rlpIn[sublenlen+1:sublenlen+sublen+1]
-			rem = rlpIn[sublenlen+sublen+1:]
-		
-		else:
-			sublen = rlpIn[0].int() - 0xc0
-			msg = rlpIn[1:sublen+1]
-			rem = rlpIn[sublen+1:]
-			
-		o = []
-		while len(msg) > 0:
-			t, msg = RLP_WRAP_DESERIALIZE(msg)
-			o.append(t)
-		return o, rem
-	
-	elif rlpIn[0] > 0xb7:
-		subsublen = rlpIn[0].int() - 0xb7
-		sublen = rlpIn[1:subsublen+1].int()
-		msg = rlpIn[subsublen+1:subsublen+sublen+1]
-		rem = rlpIn[subsublen+sublen+1:]
-		return msg, rem
-		
-	elif rlpIn[0] >= 0x80:
-		sublen = rlpIn[0].int() - 0x80
-		msg = rlpIn[1:sublen+1]
-		rem = rlpIn[sublen+1:]
-		return msg, rem
-	
-	else:
-		return rlpIn[0], rlpIn[1:]
-	
-	
-	
-def RLP_DESERIALIZE(rlpIn):
-	if not isinstance(rlpIn, BANT): raise ValueError("RLP_DESERIALIZE requires a BANT as input")
-	if rlpIn == BANT(''): raise ValueError("RLP_DESERIALIZE: Requires nonempty BANT")
-	
-	ret, rem = RLP_WRAP_DESERIALIZE(rlpIn)
-	if rem != BANT(''): raise ValueError("RLP_DESERIALIZE: Fail, remainder present")
-	return ret
-		
-	
-	
-def RLP_ENCODE_LEN(b, islist = False):
-		if len(b) == 1 and not islist and b < 0x80:
-			return bytearray([])
-		elif len(b) < 56:
-			if not islist: return bytearray([0x80+len(b)])
-			return bytearray([0xc0+len(b)]) 
-		else:
-			if not islist: return bytearray([0xb7+len(i2s(len(b)))]) + bytearray(i2s(len(b)))
-			return bytearray([0xf7+len(i2s(len(b)))]) + bytearray(i2s(len(b)))
-	
-def RLP_SERIALIZE(blistIn):
-	rt = bytearray('')
-	
-	if isinstance(blistIn, BANT):
-		rt.extend(RLP_ENCODE_LEN(blistIn) + blistIn.raw())
-		ret = rt
-	elif isinstance(blistIn, list):
-		for b in blistIn:
-			rt.extend( RLP_SERIALIZE(b).raw() )
-		
-		ret = RLP_ENCODE_LEN(rt, True)
-		ret.extend(rt)
-	
-	return BANT(ret)
-			
 		
 class HashTree:
 	def __init__(self, *init):

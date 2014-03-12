@@ -84,4 +84,79 @@ def _default(self, obj):
 
 _default.default = JSONEncoder().default # save unmodified default
 JSONEncoder.default = _default # replacement
+
+
+
+#==============================================================================
+# RLP OPERATIONS
+#==============================================================================
+	
+def RLP_WRAP_DESERIALIZE(rlpIn):
+	if rlpIn[0] >= 0xc0:
+		if rlpIn[0] > 0xf7:
+			sublenlen = rlpIn[0].int() - 0xf7
+			sublen = rlpIn[1:sublenlen+1].int()
+			msg = rlpIn[sublenlen+1:sublenlen+sublen+1]
+			rem = rlpIn[sublenlen+sublen+1:]
+		
+		else:
+			sublen = rlpIn[0].int() - 0xc0
+			msg = rlpIn[1:sublen+1]
+			rem = rlpIn[sublen+1:]
+			
+		o = []
+		while len(msg) > 0:
+			t, msg = RLP_WRAP_DESERIALIZE(msg)
+			o.append(t)
+		return o, rem
+	
+	elif rlpIn[0] > 0xb7:
+		subsublen = rlpIn[0].int() - 0xb7
+		sublen = rlpIn[1:subsublen+1].int()
+		msg = rlpIn[subsublen+1:subsublen+sublen+1]
+		rem = rlpIn[subsublen+sublen+1:]
+		return msg, rem
+		
+	elif rlpIn[0] >= 0x80:
+		sublen = rlpIn[0].int() - 0x80
+		msg = rlpIn[1:sublen+1]
+		rem = rlpIn[sublen+1:]
+		return msg, rem
+	
+	else:
+		return rlpIn[0], rlpIn[1:]
+		
+def RLP_DESERIALIZE(rlpIn):
+	if not isinstance(rlpIn, BANT): raise ValueError("RLP_DESERIALIZE requires a BANT as input")
+	if rlpIn == BANT(''): raise ValueError("RLP_DESERIALIZE: Requires nonempty BANT")
+	
+	ret, rem = RLP_WRAP_DESERIALIZE(rlpIn)
+	if rem != BANT(''): raise ValueError("RLP_DESERIALIZE: Fail, remainder present")
+	return ret
+	
+def RLP_ENCODE_LEN(b, islist = False):
+		if len(b) == 1 and not islist and b < 0x80:
+			return bytearray([])
+		elif len(b) < 56:
+			if not islist: return bytearray([0x80+len(b)])
+			return bytearray([0xc0+len(b)]) 
+		else:
+			if not islist: return bytearray([0xb7+len(i2s(len(b)))]) + bytearray(i2s(len(b)))
+			return bytearray([0xf7+len(i2s(len(b)))]) + bytearray(i2s(len(b)))
+	
+def RLP_SERIALIZE(blistIn):
+	rt = bytearray('')
+	
+	if isinstance(blistIn, BANT):
+		rt.extend(RLP_ENCODE_LEN(blistIn) + blistIn.raw())
+		ret = rt
+	elif isinstance(blistIn, list):
+		for b in blistIn:
+			rt.extend( RLP_SERIALIZE(b).raw() )
+		
+		ret = RLP_ENCODE_LEN(rt, True)
+		ret.extend(rt)
+	
+	return BANT(ret)
+			
 	
