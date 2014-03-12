@@ -26,9 +26,14 @@ class Redis(Database):
 	def set(self, key, value): return self.r.set(key, value)
 	
 	def lpush(self, key, *values): return self.r.lpush(key, *values)
+	def lpushx(self, key, *values): return self.r.lpushx(key, *values)
 	def rpush(self, key, *values): return self.r.rpush(key, *values)
+	def rpushx(self, key, *values): return self.r.rpushx(key, *values)
 	
 	def delete(self, key): return self.r.delete(key)
+	
+	# WARNING!
+	def flushdb(self): return self.r.flushdb()
 	
 	# read
 	def get(self, key): 
@@ -41,4 +46,13 @@ class Redis(Database):
 		
 	def exists(self, key):
 		return self.r.exists(key)
+		
+	def sismember(self, key, member):
+		return self.r.sismember(key, member)
+		
+	def llen(self, key):
+		return self.__postprocess(self.r.llen(key))
+		
+	def lindex(self, key, index):
+		return self.__postprocess(self.r.lindex(key, index))
 	

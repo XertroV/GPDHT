@@ -5,7 +5,7 @@ from utilities import *
 ghl = [
 	'00000001'.decode('hex'),
 	'0000000000000000000000000000000000000000000000000000000000000000'.decode('hex'),
-	'7391bf2c22dab3706eb8dff6d2ff6f6bd1e3aa8238544d73655fba7d3802946d'.decode('hex'),
+	'0000000000000000000000000000000000000000000000000000000000000000'.decode('hex'),
 	'0fffff02'.decode('hex'),
 	'00000000'.decode('hex')
 	]
@@ -32,7 +32,7 @@ while True:
             print h.encode('hex')
             print 'nonce:', ghl[2].encode('hex')
             break
-    ghl[2] = hash(ghl[2])
+    ghl[2] = hash(ghl[2])[:8]
     if c % 1000 == 0:
             print c, 'COUNT'
 			

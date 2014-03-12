@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-from datastructs import ContractStorage
+from datastructs import *
 from hashlib import sha256
 
 from btpeer import *
@@ -29,11 +29,10 @@ listen for - PoW Declarations
 '''
 
 # networking commands
-VERSION = "VERS"; INFO = "INFO"; FRIENDS = "FRND"; DESCRIBE = "DESC"; DISPUTED = "DISP"
-QUIT = "QUIT"
+VERSION = "VERS"; INFO = "INFO"; FRIENDS = "FRND"; DESCRIBE = "DESC"
+DISPUTED = "DISP"; CHAIN = "DCHN"
 
-# metatdata in db; PIC = PD index count
-PIC = 0; TOPHASH = 1; TOPDIFF = 2; TOPHEIGHT = 3
+# metadata shouldn't be included at this level
 # PDs in the db
 PD = 0; INDEX = 1; HEIGHT = 2; CUMDIFF = 3; HISTORY = 4
 
@@ -44,6 +43,17 @@ class PoWPRISM(BTPeer):
 	''' PowPRISM is a generic class meant to provide the base, universal 
 	logic for the underlying GPDHT. It should not know about state logic '''
 	def __init__(self, maxpeers, serverport):
+		
+		# is this a crime against humanity?
+		self.__processPD = None
+		self.__processSD = None
+		
+				
+			
+			
+# simplest case; only accept PDs
+class TestNet1(PoWPRISM):
+	def __init__(self, maxpeers, serverport, db=15):
 		BTPeer.__init__(self, maxpeers, serverport)
 		
 		self.addrouter(self.__router)
@@ -56,11 +66,29 @@ class PoWPRISM(BTPeer):
 			FRIENDS: self.__handle_friends,
 			DESCRIBE: self.__handle_describe,
 			DISPUTED: self.__handle_disputed,
-			QUIT: self.__handle_quit
+			CHAIN: self.__handle_chain,
 		}
 		for a in self.handlers:
 			self.addhandler(a, self.handlers[a])
 		
+		PoWPRISM.__init__(self, maxpeers, serverport)
+		self.__loadInitialVariables()
+				
+		self.chain = Chain()
+		self.genesisheaderlist = [
+			'00000001'.decode('hex'),
+			'0000000000000000000000000000000000000000000000000000000000000000'.decode('hex'),
+			'87c6eea9ad933605ea59565c77efc446eeba0aa83537d6bd79305b1fa8292639'.decode('hex'),
+			'0fffff02'.decode('hex'),
+			'00000000'.decode('hex')
+			]
+		self.genesisheader = ''.join(self.genesisheaderlist)
+		self.chain.setGenesis(self.genesisheader)
+		
+		self.disputed = {}
+		self.banned = set()
+		
+
 	def __debug(self, msg):
 		if self.debug:
 			btdebug(msg)
@@ -80,19 +108,14 @@ class PoWPRISM(BTPeer):
 		pass
 	def __handle_disputed(self, peerconn, data):
 		pass
-	
+	def __handle_chain(self, peerconn, data):
+		pass
 	def __handle_version(self, peerconn, data):
 		pass
-	def __handle_quit(self, peerconn, data):
-		self.shutdown = True
-		
-	def __processPD(self, pd):
-		pass # this should be defined in child class
-	def __processSD(self, sd):
-		pass # this should be defined in child class
 		
 	def broadcast(self, cmd, msg=""):
 		for p in self.peers:
+			self.__debug("Broadcast to: %s" % p)
 			self.sendtopeer(p,cmd,msg,False)
 			
 	def buildpeers(self, host, port):
@@ -116,59 +139,11 @@ class PoWPRISM(BTPeer):
 			self.addpeer(peerid, host, port)
 		except:
 			pass
-			
-	def run(self):
-		t = threading.Thread( target = self.mainloop, args = [] )
-		t.start()
-		
-		while not self.shutdown:
-			try:
-				cmd = raw_input("Msg cmd to send > ")
-				if cmd not in self.handlers:
-					self.__debug("Msg cmd not found.. %s" % cmd)
-				else:
-					self.broadcast(cmd)
-			except KeyboardInterrupt:
-				print 'Killing...'
-				self.shutdown = True
-				break
-				
-			
-			
-# simplest case; only accept PDs
-class TestNet1(PoWPRISM):
-	def __init__(self, maxpeers, serverport, db=15):
-		PoWPRISM.__init__(self, maxpeers, serverport)
-		self.__loadInitialVariables()
-				
-		self.genesisheaderlist = [
-			'00000001'.decode('hex'),
-			'0000000000000000000000000000000000000000000000000000000000000000'.decode('hex'),
-			'87c6eea9ad933605ea59565c77efc446eeba0aa83537d6bd79305b1fa8292639'.decode('hex'),
-			'0fffff02'.decode('hex'),
-			'00000000'.decode('hex')
-			]
-			
-		self.genesisheader = ''.join(self.genesisheaderlist)
-		self.target = unpackTarget(self.genesisheaderlist[3])
-		print "%064x" % self.target
-		assert s2i(self.hash(self.genesisheader)) < self.target
-		
-		self.storage = Redis(db=db)
-		
-		self.disputed = {}
-		self.banned = set()
-		
-		self.updateMiner = True
-		self.__writePD(self.genesisheader, genesis=True)
-		
-	def __debug(self, msg): 
-		''' Print debug messages '''
-		if self.debug: btdebug(msg)
 		
 	def __loadInitialVariables(self):
 		''' These can be mission critical; should be called very early '''
 		self.target1 = 2**256-1
+		
 		
 	def merkleroot(self, hashList):
 		merkleroot = self.merkleroot
@@ -177,17 +152,16 @@ class TestNet1(PoWPRISM):
 		if lhl % 2 == 1: return merkleroot(hashList + hashList[-1:])
 		return merkleroot([self.hash(''.join(hashList[i:i+2])) for i in xrange(0,lhl,2)])
 		
-	def hash(self, message):
-		return sha256(message).digest()
 		
-	def powacceptable(self, bh):
-		if long(bh.decode('hex'),16) < self.target: return True
+	def powacceptable(self, pd):
+		if long(pd.decode('hex'),16) < self.target: return True
 		else: return False
 		
 	def startminer(self):
 		t = threading.Thread( target = self.miner, args = [] )
 		t.start()
 		
+	# miner should really be in the state maker
 	def miner(self):
 		# get network state to make good blocks
 		# DOSTUFFUPDATE()
@@ -197,9 +171,10 @@ class TestNet1(PoWPRISM):
 		
 		while not self.shutdown:
 			# update bhlist - set parent to tophash
-			metadata = self.storage.lrange(ZERO, 0, -1)
-			while metadata == ZERO: time.sleep(0.5)
-			bhlist[1] = metadata[TOPHASH]
+			while not self.storage.exists(ZERO): time.sleep(0.5)
+			hrecentblock = self.storage.lindex(ZERO, -1)
+			recentblock = self.storage.lrange(hrecentblock, 0, -1)
+			bhlist[1] = self.hash(recentblock[0])
 			# also refresh merkle root
 			# < stuff >
 						
@@ -214,14 +189,20 @@ class TestNet1(PoWPRISM):
 					self.broadcast(INFO,ZERO+pd)
 					
 				bhlist[2] = self.hash(bhlist[2])
-	
+	# miner should really be in the state maker
 	
 	
 	def __pd_extractVer(self, pd): return pd[:4]
 	def __pd_extractPrevHash(self, pd): return pd[4:4+32]
 	def __pd_extractMerkleRoot(self, pd): return pd[4+32:4+32+32]
 	def __pd_extractPackedTarget(self, pd): return pd[4+32+32:4+32+32+4]
-	def __pd_extractVotes(self, pd): return pd[-4:]
+	def __pd_extractVotes(self, pd): return pd[4+32+32+4:4+32+32+4+4]
+	
+	def __splitPD(self, pd):
+		return [pd[:4],pd[4:4+32],pd[4+32:4+32+32],pd[4+32+32:4+32+32+4],pd[4+32+32+4:4+32+32+4+4]]
+	
+	def __hpd_histIndex(self, hpd): return sumSI(hpd, 2)
+	def __hpd_nextIndex(self, hpd): return sumSI(hpd, 1)
 	
 	
 	def hasKey(self, key):
@@ -255,24 +236,18 @@ class TestNet1(PoWPRISM):
 		
 		if genesis:
 			genesisdiff = self.target1 / unpackTarget(self.__pd_extractPackedTarget(pd))
-			# [ powdec, indexcount, height, cumdiff, history ]
-			pddata = [pd, i2s(1), i2s(1), i2s(genesisdiff), hpd ]
-			# [ index count, top hash, top cumdiff, top height ]
-			metadata = [i2s(1), hpd, i2s(genesisdiff), i2s(1)]
-			index = i2s(1)
+			# [ powdec, indexcount, height, cumdiff ]
+			pddata = [ pd, ZERO, i2s(1), i2s(genesisdiff) ]
+			history = [ hpd ]
 		else:
 			pddata = [pd]
 			
-			metadata = self.storage.lrange(ZERO, 0, -1)
-			pdIndexCount = s2i(metadata[PIC])
-			pdIndexCount += 1
-			metadata[PIC] = i2s(pdIndexCount)
-			
-			pddata.append(metadata[PIC])
+			pddata.append(ZERO)
 			
 			hparent = self.__pd_extractPrevHash(pd)
 			parentdata = self.storage.lrange(hparent, 0, -1)
 			parent = parentdata[PD]
+			self.storage.rpush(self.__hpd_nextIndex(hparent), hpd)
 			
 			parentheight = parentdata[HEIGHT]
 			height = sumSI(parentheight, 1)
@@ -284,31 +259,24 @@ class TestNet1(PoWPRISM):
 			cumdiff = i2s(parentdiff + diff)
 			pddata.append(cumdiff)
 			
-			history = parentdata[HISTORY:]
+			history = self.storage.lrange(self.__hpd_histIndex(hparent), 0, -1)
 			history.append(hpd)
 			j = 2
-			while pdIndexCount % j == 0:
+			hnum = s2i(height)
+			while s2i(height) % j == 0:
 				history = history[:-2] + [self.hash(history[-2] + history[-1])]
 				j *= 2
-			
-			pddata += history
-			
-			# if best
-			if sGT(cumdiff, metadata[TOPDIFF]): # then best
-				metadata[TOPHASH] = hpd
-				metadata[TOPDIFF] = cumdiff
-				metadata[TOPHEIGHT] = height
 				
-			
-		pipe = self.storage.pipeline()
-		pipe.delete(ZERO)
-		pipe.rpush(ZERO, *metadata)
-		pipe.execute()
+		# add to index
+		self.storage.rpush(ZERO, hpd)
+		pddata[1] = i2s(self.storage.llen(ZERO) - 1)
 		
+		# set block deets
 		self.storage.delete(hpd)
 		self.storage.rpush(hpd, *pddata)
 		if self.debug: self.storage.rpush(hpd.encode('hex'), *pddata)
-		self.storage.set(metadata[PIC], hpd)
+		self.storage.rpush(self.__hpd_histIndex(hpd), *history)
+		if self.debug: self.__debug(history)
 		self.__debug(self.storage.lrange(hpd,0,-1))
 		
 		self.__debug("__writePD : Complete")
@@ -318,6 +286,24 @@ class TestNet1(PoWPRISM):
 		
 	def __writeSD(self, sd):
 		pass
+		
+		
+			
+	def run(self):
+		t = threading.Thread( target = self.mainloop, args = [] )
+		t.start()
+		
+		while not self.shutdown:
+			try:
+				cmd = raw_input("Msg cmd to send > ")
+				if cmd not in self.handlers:
+					self.__debug("Msg cmd not found.. %s" % cmd)
+				else:
+					self.broadcast(cmd)
+			except KeyboardInterrupt:
+				print 'Killing...'
+				self.shutdown = True
+				break
 	
 
 
@@ -351,7 +337,8 @@ if __name__ == '__main__':
 	# initial peer
 	if port != 1296:
 		tn = TestNet1(10, port, db=14)
-		tn.addpeer('192.168.1.9:1296','192.168.1.9',port)
+		tn.storage.flushdb()
+		tn.addpeer('192.168.1.9:1296','192.168.1.9',1296)
 	else:
 		tn = TestNet1(10, port)
 	

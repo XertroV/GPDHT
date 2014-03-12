@@ -102,7 +102,6 @@ class BTPeer:
 				self.__debug( 'Not handled: %s: %s' % (msgtype, msgdata.encode('hex')) )
 			else:
 				self.__debug( 'Handling peer msg: %s: %s' % (msgtype, msgdata.encode('hex')) )
-				self.addpeer(host+':'+int(port), host, port)
 				self.handlers[ msgtype ]( peerconn, msgdata )
 		except KeyboardInterrupt or SystemExit:
 			raise
@@ -182,6 +181,7 @@ class BTPeer:
 		if peerid not in self.peers and (self.maxpeers == 0 or
 											 len(self.peers) < self.maxpeers):
 			self.peers[ peerid ] = (host, int(port))
+			btdebug("Peerid success: %s" % peerid)
 			return True
 		else:
 			btdebug("Peerid failed: %s" % peerid)
