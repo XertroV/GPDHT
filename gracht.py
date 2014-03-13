@@ -30,10 +30,9 @@ aboutInfo = {
 # GPDHT config
 MainChain = GPDHTChain()
 chains = {MainChain.genesisHash : MainChain} # k: genesis block, v: Chain object
-print chains
 subscribedTo = chains.keys() # list of genesis blocks
-knownNodes = dict(zip([x.encode() for x in subscribedTo],[[] for _ in subscribedTo])) # list of node objects
-knownAlerts = dict(zip([x.encode() for x in subscribedTo],[[] for _ in subscribedTo])) # list of known alerts
+knownNodes = dict(zip([x for x in subscribedTo],[set() for _ in subscribedTo])) # list of node objects
+knownAlerts = dict(zip([x for x in subscribedTo],[set() for _ in subscribedTo])) # list of known alerts
 
 
 
@@ -64,7 +63,6 @@ app.logger.addHandler(log_handler)
 from hashlib import sha256
 from binascii import hexlify
 import json
-from bitcoin.base58 import encode as b58encode, decode as b58decode
 
 
 #==============================================================================
@@ -116,13 +114,13 @@ def getTopBlock(chain):
 	
 @app.route("/<bant:chain>/newblock",methods=["POST"])
 def putNewBlock(chain):
-	hashtree = json.loads(request.form['hashtree'])
-	blockinfo = json.loads(request.form['blockinfo'])
+	hashtree = HashTree(json_loads(request.form['hashtree']))
+	blockinfo = json_loads(request.form['blockinfo'])
 	return chains[chain].addBlock(hashtree, blockinfo)
 	
 @app.route("/<bant:chain>/gettrees",methods=["POST"])
 def getTrees(chain):
-	roots = json.loads(request.form['roots'])
+	roots = json_loads(request.form['roots'])
 	trees = []
 	for root in roots:
 		trees.append(db.getTreeFromRoot(root))
@@ -130,7 +128,7 @@ def getTrees(chain):
 	
 @app.route("/<bant:chain>/sucessors",methods=["POST"])
 def getSuccessors(chain):
-	blocklocator = json.loads(request.form['blocklocator'])
+	blocklocator = json_loads(request.form['blocklocator'])
 	blocks = blocklocator['blocks']
 	if 'stop' in blocklocator: stop = blocklocator['stop']
 	else: stop = ''
@@ -142,7 +140,7 @@ def getChainAlerts(chain):
 	
 @app.route("/<bant:chain>/alert",methods=["POST"])
 def newAlert(chain):
-	alert = json.loads(request.form['alert'])
+	alert = json_loads(request.form['alert'])
 	if not chains[chain].validAlert(alert): return json.dumps({'error':'invalid alert'})
 	knownAlerts[chain].append(alert)
 	db.recordAlert(chain, alert)
@@ -154,7 +152,7 @@ def getBranch(chain, MR, leaf):
 	
 @app.route("/<bant:chain>/getentry",methods=["POST"])
 def getEntrys(chain):
-	entries = json.loads(request.form['entries'])
+	entries = json_loads(request.form['entries'])
 	response = []
 	for entryHash in entries:
 		response.append( db.getEntry(entryHash) )
@@ -163,7 +161,9 @@ def getEntrys(chain):
 @app.route("/<bant:chain>/subscribe",methods=["POST"])
 def subscribeNode(chain):
 	# if chain not in chains: abort(404)
-	nodes[chain].add(Node(request.remote_addr, int(request.form['port'])))
+	print repr(chain)
+	knownNodes[chain].add(Node(request.remote_addr, int(request.form['port'])))
+	print '/%s/subscribe: updated knownNodes with %s:%d' % (chain.hex(), request.remote_addr, int(request.form['port']))
 	return json.dumps({'error':''})
 	
 	

@@ -90,5 +90,20 @@ _default.default = JSONEncoder().default # save unmodified default
 JSONEncoder.default = _default # replacement
 
 
-
+def json_str_to_bant(obj):
+	if isinstance(obj, str):
+		return BANT(obj)
+	if isinstance(obj, list):
+		rt = []
+		for a in obj: rt.append(json_str_to_bant(a))
+		return rt
+	if isinstance(obj, dict):
+		rt = {}
+		for k,v in obj.iteritems():
+			rt[json_str_to_bant(k)] = json_str_to_bant(v)
+	return obj
+	
+def json_loads(obj):
+	a = json.loads(obj)
+	return json_str_to_bant(a)
 

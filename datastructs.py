@@ -113,10 +113,12 @@ class BANT:
 		
 		
 
-def DECODEBANT(b58s):
-	return BANT(b58decode(b58s))
+def DECODEBANT(s):
+	return BANT(s.decode('hex'))
+	#return BANT(b58decode(b58s))
 def ENCODEBANT(b):
-	return b58encode(b.str())
+	return b.hex()
+	#return b58encode(b.str())
 	
 
 
