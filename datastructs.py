@@ -228,6 +228,25 @@ def json_loads(obj):
 # HashTree
 #==============================================================================
 		
+class HashNode:
+	def __init__(self, ttl, parents*):
+		self.myhash = None
+		self.parents = parents
+		if len(parents) == 1: self.parents += parents
+		self.ttl = ttl
+		self.getHash()
+		
+	def getHash(self, force=False):
+		if self.myhash == None or force:
+			# p0.hash ++ ttl ++ p1.hash
+			self.myhash = hashfunc(self.parents[0].getHash().concat(self.ttl.concat(self.parents[1].getHash())))
+		return self.myhash
+		
+	def setParent(self, lr, newparent):
+		self.parent[lr] = newparent
+		self.getHash(True)
+		
+		
 class HashTree:
 	def __init__(self, init, hashFirst=False):
 		if len(init) == 0: self.leaves = []
@@ -423,6 +442,8 @@ class GPDHTChain(Forest):
 		if self.initComplete == False:
 			self.initComplete = True
 			
+		# TODO : fire block to other nodes
+			
 		return True
 		
 		
@@ -440,6 +461,11 @@ class GPDHTChain(Forest):
 		
 	def getTopBlock(self):
 		return self.head
+		
+	
+	def learnOfDB(self, db):
+		self.db = db
+		self.loadChain()
 		
 		
 		
@@ -476,8 +502,8 @@ class Node:
 #==============================================================================
 		
 
-class CumulativeDifficulty():
-	def __init__(self):
+class Block:
+	def __init__(hashtree):
 		pass
 		
 	

@@ -163,13 +163,17 @@ def getEntrys(chain):
 @app.route("/<bant:chain>/subscribe",methods=["POST"])
 def subscribeNode(chain):
 	# if chain not in chains: abort(404)
-	print repr(chain)
+	print '/subscribe: chain:', repr(chain)
 	knownNodes[chain].add(Node(request.remote_addr, int(request.form['port'])))
 	print '/%s/subscribe: updated knownNodes with %s:%d' % (chain.hex(), request.remote_addr, int(request.form['port']))
 	return json.dumps({'error':''})
 	
 	
+	
+	
+	
 
 if __name__ == "__main__":
 	db = Database()
+	MainChain.learnOfDB(db)
 	app.run(host=bindto, port=hostport)
