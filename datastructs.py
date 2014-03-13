@@ -34,6 +34,8 @@ class BANT:
 			self.this = bytearray(initString.decode('hex')) # byte array
 		elif isinstance(initString, int):
 			self.this = BANT(i2s(initString)).this
+		elif isinstance(initString, BANT):
+			self.this = initString.this[:]
 		else:
 			self.this = bytearray(bytes(initString))
 			
@@ -47,11 +49,12 @@ class BANT:
 	def __gt__(self, other):
 		return int(self) > int(other)
 	def __eq__(self, other):
+		if other == None: return False
 		if isinstance(other, str):
 			return self.this == other
 		return int(self) == int(other)
 	def __ne__(self, other):
-		return int(self) != int(other)
+		return not (self == other)
 	def __le__(self, other):
 		return int(self) <= int(other)
 	def __ge__(self, other):
@@ -93,6 +96,9 @@ class BANT:
 		
 	def __hash__(self):
 		return int(self)
+	
+	def getHash(self):
+		return hashfunc(self)
 	
 	def encode(self, f='bant'):
 		if f == 'bant': return ENCODEBANT(self)
@@ -229,68 +235,93 @@ def json_loads(obj):
 #==============================================================================
 		
 class HashNode:
-	def __init__(self, ttl, parents*):
+	def __init__(self, ttl, children):
 		self.myhash = None
-		self.parents = parents
-		if len(parents) == 1: self.parents += parents
-		self.ttl = ttl
+		self.parent = None
+		self.children = children
+		if isinstance(children[0], HashNode):
+			if len(children) == 1: self.children += children
+			self.ttl = children[0].ttl
+			assert children[0].ttl == children[1].ttl
+		elif len(children) < 1 or len(children) > 2: raise ValueError("HashNode: children must be a list/tuple of length 1 or 2")
+		else: self.ttl = ttl
 		self.getHash()
+		if not isinstance(children[0], BANT):
+			_ = [self.children[0].setParent(self), self.children[1].setParent(self)]
 		
 	def getHash(self, force=False):
 		if self.myhash == None or force:
 			# p0.hash ++ ttl ++ p1.hash
-			self.myhash = hashfunc(self.parents[0].getHash().concat(self.ttl.concat(self.parents[1].getHash())))
+			tripconcathash = lambda x: hashfunc(self.children[x[0]].getHash().concat(BANT(self.ttl).concat(self.children[x[1]].getHash())))
+			if len(self.children) == 1: self.myhash = tripconcathash([0,0])
+			else: self.myhash = tripconcathash([0,1])
+			if self.parent != None: self.parent.getHash(True)
 		return self.myhash
 		
-	def setParent(self, lr, newparent):
-		self.parent[lr] = newparent
+	def getChild(self, lr):
+		return self.children[lr]
+		
+	def setChild(self, lr, newchild):
+		self.child[lr] = newchild
 		self.getHash(True)
+		
+	def setParent(self, parent):
+		self.parent = parent
 		
 		
 class HashTree:
-	def __init__(self, init, hashFirst=False):
-		if len(init) == 0: self.leaves = []
+	def __init__(self, init, hashFirst=False):		
+		assert len(init) > 0
+		
 		if hashFirst: 
-			self.leaves = [self.doHash(BANT(i)) for i in init]
+			leaves = [self.doHash(BANT(i)) for i in init]
 		else:
-			if False in [len(i) == 32 for i in init]:
-				raise ValueError("HashTree: if hashFirst=False then initialization leaves must all be 32 bytes")
-			self.leaves = init[:]
-		self.myhash = BANT('00')
-		self.recalcHash()
+			if False in [len(i) == 32 for i in init]: raise ValueError("HashTree: if hashFirst=False then initialization leaves must all be 32 bytes")
+			leaves = init
+		
+		chunks = leaves
+		ttl = 0
+		while len(chunks) > 1:
+			newChunks = []
+			for i in xrange(0,len(chunks),2):
+				newChunks.append(HashNode(ttl, leaves[i:i+2]))
+			chunks = newChunks
+			ttl += 1
+		self.root = chunks[0]
+		self.height = ttl
 		
 		
 	def doHash(self, msg):
 		return hashfunc(msg)
 		
 		
-	def hashRow(self, row):
-		''' Take a row and create a row of half the length '''
-		if len(row) == 0: return BANT('')
-		if len(row) == 1: return row[:]
-		i = 0
-		rt = []
-		if len(row) % 2 == 1: row = row[:] + [row[-1]]
-		for i in range(len(row)/2): rt.append(self.doHash(row[2*i].concat(row[2*i+1])))
-		return rt
-		
-		
-	def recalcHash(self):
-		rt = self.leaves[:]
-		if len(self.leaves) == 0: 
-			rt = [BANT('00')]
-		while len(rt) > 1:
-			rt = self.hashRow(rt)
-		self.myhash = rt[0]
-		return True
+	def rightmost(self, ttl):
+		w = self.root 
+		while True:
+			if w.ttl == ttl: return w
+			if w.ttl <= 0: raise ValueError("HashTree.rightmost: ttl provided is outside bounds")
+			w = w.children[1]
 		
 	
-	def add(self, h, v=BANT('00')):
-		self.leaves.append(BANT(h))
-		self.recalcHash()
+	def append(self, v=BANT('00')):			
+		n = self.n-1
+		ttl = 0
+		a = HashNode(ttl, [v])
+		while True:
+			if n % 2 == 1:
+				b = HashNode(ttl+1, [self.rightmost(ttl), a])
+				if b.ttl > self.root.ttl: self.root = b
+				else: self.rightmost(ttl+1).setChild(1, b)
+				break
+			else:
+				ttl += 1
+				a = HashNode(ttl, [a])
+				n /= 2
+		self.n += 1
 		
 		
 	def remove(self, h):
+		pass
 		if h not in self.leaves:
 			return False
 		else:
@@ -300,6 +331,7 @@ class HashTree:
 			
 			
 	def update(self, pos, val):
+		pass
 		if int(pos) >= len(self.leaves): raise ValueError("HashTree.update: 'pos' out of range.")
 		self.leaves[pos] = val[:]
 		self.recalcHash() # todo : make not terrible
@@ -307,7 +339,7 @@ class HashTree:
 		
 			
 	def getHash(self):
-		return self.myhash
+		return self.root.getHash()
 		
 	def __str__(self):
 		return str(self.myhash)
@@ -506,6 +538,11 @@ class Block:
 	def __init__(hashtree):
 		pass
 		
+
 	
+#==============================================================================
+# Constants
+#==============================================================================
 		
-		
+
+z32 = BANT('',padTo=32)
