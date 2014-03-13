@@ -113,10 +113,12 @@ def getTopBlock(chain):
 	return json.dumps([chains[chain].getTopBlock()])
 	
 @app.route("/<bant:chain>/newblock",methods=["POST"])
-def putNewBlock(chain):
+def learnNewBlock(chain):
+	print '/newblock - hashtree leaves:', repr(json_loads(request.form['hashtree']))
 	hashtree = HashTree(json_loads(request.form['hashtree']))
 	blockinfo = json_loads(request.form['blockinfo'])
-	return chains[chain].addBlock(hashtree, blockinfo)
+	print '/newblock - hashtree: %s, blockinfo: %s' % (repr(hashtree.leaves), repr(blockinfo))
+	return json.dumps({'success':chains[chain].addBlock(hashtree, blockinfo)})
 	
 @app.route("/<bant:chain>/gettrees",methods=["POST"])
 def getTrees(chain):

@@ -194,15 +194,49 @@ def RLP_SERIALIZE(blistIn):
 	
 	return BANT(ret)
 			
+
+
+#==============================================================================
+# JSON OPERATIONS
+#==============================================================================	
 	
 	
+def json_str_to_bant(obj):
+	print 'json_str_to_bant - %s' % str(obj)
+	if isinstance(obj, str):
+		return BANT(obj.decode('hex'))
+	if isinstance(obj, unicode):
+		return BANT(str(obj).decode('hex'))
+	if isinstance(obj, list):
+		rt = []
+		for a in obj: rt.append(json_str_to_bant(a))
+		return rt
+	if isinstance(obj, dict):
+		rt = {}
+		for k,v in obj.iteritems():
+			rt[json_str_to_bant(k)] = json_str_to_bant(v)
+	return obj
+	
+def json_loads(obj):
+	a = json.loads(obj)
+	return json_str_to_bant(a)
 	
 
+
+
+#==============================================================================
+# HashTree
+#==============================================================================
 		
 class HashTree:
-	def __init__(self, init):
+	def __init__(self, init, hashFirst=False):
 		if len(init) == 0: self.leaves = []
-		self.leaves = [self.doHash(BANT(i)) for i in init]
+		if hashFirst: 
+			self.leaves = [self.doHash(BANT(i)) for i in init]
+		else:
+			if False in [len(i) == 32 for i in init]:
+				raise ValueError("HashTree: if hashFirst=False then initialization leaves must all be 32 bytes")
+			self.leaves = init[:]
 		self.myhash = BANT('00')
 		self.recalcHash()
 		
@@ -258,7 +292,24 @@ class HashTree:
 		
 	def __str__(self):
 		return str(self.myhash)
+	
+	def __hash__(self):
+		return int(self.getHash())
 		
+	def __eq__(self, other):
+		if isinstance(other, str):
+			return self.getHash().str() == other
+		elif isinstance(other, BANT):
+			return self.getHash() == other
+		else:
+			return self.getHash() == other.getHash()
+		
+		
+
+#==============================================================================
+# Forests, Chains, Etc
+#==============================================================================
+				
 		
 		
 class Forest(object):
@@ -302,7 +353,7 @@ class GPDHTChain(Forest):
 		message = "It was a bright cold day in April, and the clocks were striking thirteen."
 		nonce = self.hash(message)
 		potentialTree = [blockInfoRLP, blockInfoRLP, message, nonce]
-		h = HashTree(potentialTree)
+		h = HashTree(potentialTree, hashFirst=True)
 		count = 0
 		while True:
 			count += 1
@@ -322,7 +373,7 @@ class GPDHTChain(Forest):
 			BANT(b'\x00\x01'),
 			BANT(bytearray(32)),
 			BANT(bytearray(32)),
-			BANT(b'\xff\xff\xff\x02'),
+			BANT(b'\xff\xff\xff\x01'),
 			BANT(int(time.time()), padTo=6),
 			BANT('', padTo=4)
 		]
@@ -358,17 +409,21 @@ class GPDHTChain(Forest):
 	
 	def addBlock(self, block, blockInfo):
 		print 'addBlock: Potential block', block.getHash().hex()
-		print block.leaves, self.initComplete
+		print 'addBlock: block.leaves:', block.leaves
 		if self.initComplete == False:
 			assert blockInfo[self.headerMap['prevblock']] == BANT(bytearray(32))
 		else:
+			print 'addBlock: repr(prevblock):', repr(blockInfo[self.headerMap['prevblock']])
 			assert blockInfo[self.headerMap['prevblock']] in self.trees
 		h = self.hashBlockInfo(blockInfo)
 		assert h in block.leaves
 		print 'addBlock: NEW BLOCK', block.getHash().hex()
+		self.trees.add(block)
 		
 		if self.initComplete == False:
 			self.initComplete = True
+			
+		return True
 		
 		
 	
@@ -387,6 +442,13 @@ class GPDHTChain(Forest):
 		return self.head
 		
 		
+		
+
+#==============================================================================
+# Node
+#==============================================================================
+		
+		
 class Node:
 	''' Simple class to hold node info '''
 	def __init__(self, ip, port):
@@ -394,10 +456,30 @@ class Node:
 		self.port = port
 		self.versionInfo = None
 		self.alive = False
+		self.score = 0
 		self.testAlive()
-	def sendMessage(self, msg):
-		pass
+		
+		self.about = None
+		
+	def sendMessage(self, path, msg, method="GET"):
+		fireHTTP(self, path, msg, method)
+		
 	def testAlive(self):
 		# TODO : request /about from node, true if recieved
 		self.alive = True
+		
+
+
+
+#==============================================================================
+# Network Specific - Value Laden Data Structures
+#==============================================================================
+		
+
+class CumulativeDifficulty():
+	def __init__(self):
+		pass
+		
+	
+		
 		

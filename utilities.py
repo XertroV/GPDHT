@@ -68,6 +68,48 @@ def unpackTarget(pt):
 	sigfigs = pt[:3]
 	rt = zero*pad + sigfigs + zero*(32-3-pad)
 	return long(rt.encode('hex'),16)
+	
+	
+	
+
+#==============================================================================
+# THREADING
+#==============================================================================
+	
+import threading
+
+class ThreadWithArgs(threading.Thread):
+	def __init__(self, target, *args):
+		self.target = target
+		self.args = args
+		threading.Thread.__init__(self)
+		
+	def run(self):
+		self.target(*self.args)
+
+
+
+#==============================================================================
+# HTTP
+#==============================================================================
+	
+import requests
+
+
+def goGetHTTP(node, path, payload={}, method="GET"):
+	url = "http://%s:%d%s" % (node.ip, node.port, path)
+	print payload
+	if method == "POST":
+		r = requests.post(url, data=payload, proxies={"http":""})
+	else:
+		r = requests.get(url, proxies={"http":""})
+	print r.text
+	return r.text
+
+def fireHTTP(node, path, payload={}, method="GET"):
+	t = ThreadWithArgs(goGetHTTP, node, path, payload, method)
+	t.start()
+	
 
 
 #==============================================================================
@@ -81,29 +123,13 @@ method and uses it to encode the object if found.
 User: martineau
 URL: http://stackoverflow.com/questions/18478287/making-object-json-serializable-with-regular-encoder
 """
-from json import JSONEncoder
+import json
 
 def _default(self, obj):
     return getattr(obj.__class__, "to_json", _default.default)(obj)
 
-_default.default = JSONEncoder().default # save unmodified default
-JSONEncoder.default = _default # replacement
+_default.default = json.JSONEncoder().default # save unmodified default
+json.JSONEncoder.default = _default # replacement
 
 
-def json_str_to_bant(obj):
-	if isinstance(obj, str):
-		return BANT(obj)
-	if isinstance(obj, list):
-		rt = []
-		for a in obj: rt.append(json_str_to_bant(a))
-		return rt
-	if isinstance(obj, dict):
-		rt = {}
-		for k,v in obj.iteritems():
-			rt[json_str_to_bant(k)] = json_str_to_bant(v)
-	return obj
-	
-def json_loads(obj):
-	a = json.loads(obj)
-	return json_str_to_bant(a)
 
