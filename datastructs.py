@@ -1,3 +1,4 @@
+import time
 
 from hashlib import sha256
 from utilities import *
@@ -6,18 +7,19 @@ from bitcoin.base58 import encode as b58encode, decode as b58decode
 
 
 def hashfunc(msg):
-	return sha256(msg).digest()
+	return BANT(sha256(str(msg)).digest())
 
 eba = bytearray('')
 def ADDBYTEARRAYS(a,b,carry=0):
 	if (a == eba or b == eba) and carry == 0: return a + b
 	if a == eba and b == eba and carry == 1: return bytearray([carry])
-	elif a == eba: return b[:-1] + bytearray([b[-1] + carry])
-	elif b == eba: return a[:-1] + bytearray([a[-1] + carry])
+	for x,y in [(a,b),(b,a)]:
+		if x == eba: return ADDBYTEARRAYS(y[:-1]+bytearray([0]), ADDBYTEARRAYS(bytearray([y[-1]]), bytearray([carry])))
 	s = a[-1] + b[-1] + carry
 	d = s % 256
 	c = s/256
 	return ADDBYTEARRAYS(a[:-1],b[:-1],c) + bytearray([d])
+
 
 class BANT:
 	'''Byte Array Number Thing
@@ -26,14 +28,17 @@ class BANT:
 	Adds and compares like a number
 	Hashes like a byte array
 	'''
-	def __init__(self, initString=b'\x00', fromHex=False):
+	def __init__(self, initString=b'\x00', fromHex=False, padTo=0):
 		if fromHex == True:
 			'''input should be a string in hex encoding'''
 			self.this = bytearray(initString.decode('hex')) # byte array
 		elif isinstance(initString, int):
-			self.this = bytearray(i2s(initString))
+			self.this = BANT(i2s(initString)).this
 		else:
 			self.this = bytearray(bytes(initString))
+			
+		while padTo - len(self.this) > 0: self.this = bytearray([0]) + self.this
+			
 		self.isBANT = True
 	
 		
@@ -52,7 +57,7 @@ class BANT:
 	def __ge__(self, other):
 		return int(self) >= int(other)
 	def __cmp__(self, other):
-		return int(self) - int(other)
+		return BANT(int(self) - int(other))
 		
 	def __len__(self):
 		return len(self.this)
@@ -63,7 +68,7 @@ class BANT:
 		
 	# do I need to do the r___ corresponding functions? (__radd__ for example)
 	def __add__(self, other):
-		return BANT(ADDBYTEARRAYS(self.this, other.this))
+		return BANT(ADDBYTEARRAYS(self.this, BANT(other).this))
 	def __sub__(self, other):
 		return BANT(i2h(int(self) - int(other)))
 	def __mul__(self, other):
@@ -105,8 +110,6 @@ class BANT:
 		return self.__str__()
 	def int(self):
 		return self.__int__()
-	def increment(self, by=1):
-		return BANT(i2h(int(self) + 1))
 		
 		
 
@@ -117,17 +120,93 @@ def ENCODEBANT(b):
 	
 
 
+#==============================================================================
+# RLP OPERATIONS
+#==============================================================================
+	
+def RLP_WRAP_DESERIALIZE(rlpIn):
+	if rlpIn.raw()[0] >= 0xc0:
+		if rlpIn.raw()[0] > 0xf7:
+			sublenlen = rlpIn.raw()[0] - 0xf7
+			sublen = rlpIn[1:sublenlen+1].int()
+			msg = rlpIn[sublenlen+1:sublenlen+sublen+1]
+			rem = rlpIn[sublenlen+sublen+1:]
+		
+		else:
+			sublen = rlpIn.raw()[0] - 0xc0
+			msg = rlpIn[1:sublen+1]
+			rem = rlpIn[sublen+1:]
+			
+		o = []
+		while len(msg) > 0:
+			t, msg = RLP_WRAP_DESERIALIZE(msg)
+			o.append(t)
+		return o, rem
+	
+	elif rlpIn.raw()[0] > 0xb7:
+		subsublen = rlpIn.raw()[0] - 0xb7
+		sublen = rlpIn[1:subsublen+1].int()
+		msg = rlpIn[subsublen+1:subsublen+sublen+1]
+		rem = rlpIn[subsublen+sublen+1:]
+		return msg, rem
+		
+	elif rlpIn.raw()[0] >= 0x80:
+		sublen = rlpIn.raw()[0] - 0x80
+		msg = rlpIn[1:sublen+1]
+		rem = rlpIn[sublen+1:]
+		return msg, rem
+	
+	else:
+		return rlpIn[0], rlpIn[1:]
+		
+def RLP_DESERIALIZE(rlpIn):
+	if not isinstance(rlpIn, BANT): raise ValueError("RLP_DESERIALIZE requires a BANT as input")
+	if rlpIn == BANT(''): raise ValueError("RLP_DESERIALIZE: Requires nonempty BANT")
+	
+	ret, rem = RLP_WRAP_DESERIALIZE(rlpIn)
+	if rem != BANT(''): raise ValueError("RLP_DESERIALIZE: Fail, remainder present")
+	return ret
+	
+def RLP_ENCODE_LEN(b, islist = False):
+		if len(b) == 1 and not islist and b < 0x80:
+			return bytearray([])
+		elif len(b) < 56:
+			if not islist: return bytearray([0x80+len(b)])
+			return bytearray([0xc0+len(b)]) 
+		else:
+			if not islist: return bytearray([0xb7+len(i2s(len(b)))]) + bytearray(i2s(len(b)))
+			return bytearray([0xf7+len(i2s(len(b)))]) + bytearray(i2s(len(b)))
+	
+def RLP_SERIALIZE(blistIn):
+	rt = bytearray('')
+	
+	if isinstance(blistIn, BANT):
+		rt.extend(RLP_ENCODE_LEN(blistIn) + blistIn.raw())
+		ret = rt
+	elif isinstance(blistIn, list):
+		for b in blistIn:
+			rt.extend( RLP_SERIALIZE(b).raw() )
+		
+		ret = RLP_ENCODE_LEN(rt, True)
+		ret.extend(rt)
+	
+	return BANT(ret)
+			
+	
+	
+	
+
 		
 class HashTree:
-	def __init__(self, *init):
+	def __init__(self, init):
 		if len(init) == 0: self.leaves = []
-		self.leaves = [HashTree(BANT(i, fromHex=False)) for i in init]
+		self.leaves = [self.doHash(BANT(i)) for i in init]
 		self.myhash = BANT('00')
 		self.recalcHash()
 		
 		
 	def doHash(self, msg):
-		return BANT(hashlib.sha256(str(msg)).digest(), fromHex=False)
+		return hashfunc(msg)
 		
 		
 	def hashRow(self, row):
@@ -146,7 +225,6 @@ class HashTree:
 		if len(self.leaves) == 0: 
 			rt = [BANT('00')]
 		while len(rt) > 1:
-			print rt
 			rt = self.hashRow(rt)
 		self.myhash = rt[0]
 		return True
@@ -156,13 +234,22 @@ class HashTree:
 		self.leaves.append(BANT(h))
 		self.recalcHash()
 		
+		
 	def remove(self, h):
 		if h not in self.leaves:
 			return False
 		else:
-			h.remove(h)
+			self.leaves.remove(h)
 			self.recalcHash()
 			return True
+			
+			
+	def update(self, pos, val):
+		if int(pos) >= len(self.leaves): raise ValueError("HashTree.update: 'pos' out of range.")
+		self.leaves[pos] = val[:]
+		self.recalcHash() # todo : make not terrible
+		
+		
 			
 	def getHash(self):
 		return self.myhash
@@ -189,43 +276,98 @@ class GPDHTChain(Forest):
 	''' Holds a PoW chain and can answer queries '''
 	def __init__(self, genesisheader=None):
 		super(GPDHTChain, self).__init__()
-		
-		self.decs = {}
-		self.hashfunc = hashfunc
-		if genesisheader != None: self.setGenesis(genesisheader)
-		else: self.setGenesis([])
-		self.head = self.genesishash
+		self.initComplete = False
+		self.head = BANT(chr(0))
 		
 		self.headerMap = {
 			"version": 0,
 			"prevblock": 1,
 			"uncles": 2,
 			"target": 3,
+			"timestamp":4,
 		}
+		
+		self.decs = {}
+		self.hashfunc = hashfunc
+		if genesisheader != None: self.setGenesis(genesisheader)
+		else: self.setGenesis(self.mine(self.blockInfoTemplate()))
+		
+		
+	def mine(self, blockInfoTemplate):
+		blockInfoHash = self.hashBlockInfo(blockInfoTemplate)
+		blockInfoRLP = RLP_SERIALIZE(blockInfoTemplate)
+		target = unpackTarget(blockInfoTemplate[self.headerMap['target']])
+		message = "It was a bright cold day in April, and the clocks were striking thirteen."
+		nonce = self.hash(message)
+		potentialTree = [blockInfoRLP, blockInfoRLP, message, nonce]
+		h = HashTree(potentialTree)
+		count = 0
+		while True:
+			count += 1
+			h.update(3, nonce)
+			PoW = h.getHash()
+			if PoW < target:
+				break
+			nonce += 1
+			if count % 10000 == 0:
+				print count, PoW.hex()
+		print 'Chain.mine: Found Soln : %s', PoW.hex()
+		return (h, blockInfoTemplate)
+		
+	
+	def blockInfoTemplate(self):
+		return [
+			BANT(b'\x00\x01'),
+			BANT(bytearray(32)),
+			BANT(bytearray(32)),
+			BANT(b'\xff\xff\xff\x02'),
+			BANT(int(time.time()), padTo=6),
+			BANT('', padTo=4)
+		]
+			
 	
 	
 	def hash(self, message):
-		return BANT(sha256(str(message)).digest())
+		return hashfunc(message)
+		
+	def hashBlockInfo(self, blockInfo):
+		return self.hash(RLP_SERIALIZE(blockInfo))
 		
 		
-	def setGenesis(self, genesisheader):
-		assert int(genesisheader[self.headerMap["uncles"]]) == 0
-		assert int(genesisheader[self.headerMap["prevblock"]]) == 0
-		assert int(genesisheader[self.headerMap["version"]]) == 0
+	def setGenesis(self, bPair):
+		tree, blockInfo = bPair
+		print 'Setting Genesis Block'
+		assert int(blockInfo[self.headerMap["uncles"]]) == 0
+		assert int(blockInfo[self.headerMap["prevblock"]]) == 0
+		assert int(blockInfo[self.headerMap["version"]]) == 1
 		
-		genesishash = 0
-		self.target = unpackTarget(genesisheader[self.headerMap["target"]])
-		print "%064x" % self.target
-		assert int(genesishash) < self.target
+		self.target = unpackTarget(blockInfo[self.headerMap["target"]])
+		print "Chain.setGenesis: target : %064x" % self.target
+		assert int(tree.getHash()) < self.target
 		
-		self.genesisheader = genesisheader
-		self.genesishash = genesishash
+		self.genesisInfo = blockInfo
+		self.genesisTree = tree
+		self.genesisHash = tree.getHash()
+		
+		self.head = self.genesisTree.getHash()
+		
+		self.addBlock(tree, blockInfo)
 		
 	
-	def addBlock(self, block, *items):
-		assert len(items) == 1 # items should be a list of a singular metadata item
-		blockinfo = items[0]
-		h = self.hash(''.join(str(i) for i in blockinfo))
+	def addBlock(self, block, blockInfo):
+		print 'addBlock: Potential block', block.getHash().hex()
+		print block.leaves, self.initComplete
+		if self.initComplete == False:
+			assert blockInfo[self.headerMap['prevblock']] == BANT(bytearray(32))
+		else:
+			assert blockInfo[self.headerMap['prevblock']] in self.trees
+		h = self.hashBlockInfo(blockInfo)
+		assert h in block.leaves
+		print 'addBlock: NEW BLOCK', block.getHash().hex()
+		
+		if self.initComplete == False:
+			self.initComplete = True
+		
 		
 	
 	

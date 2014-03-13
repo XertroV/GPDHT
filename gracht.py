@@ -28,7 +28,8 @@ aboutInfo = {
 
 
 # GPDHT config
-chains = {GPDHTChain().genesisHash : GPDHTChain()} # k: genesis block, v: Chain object
+MainChain = GPDHTChain()
+chains = {MainChain.genesisHash : MainChain} # k: genesis block, v: Chain object
 print chains
 subscribedTo = chains.keys() # list of genesis blocks
 knownNodes = dict(zip([x.encode() for x in subscribedTo],[[] for _ in subscribedTo])) # list of node objects
