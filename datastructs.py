@@ -287,10 +287,9 @@ class HashNode:
 	def getHash(self, force=False):
 		if self.myhash == None or force:
 			# p0.hash ++ ttl ++ p1.hash
-			tripconcat = lambda x: self.children[x[0]].getHash().concat(BANT(self.ttl).concat(self.children[x[1]].getHash()))
-			if len(self.children) == 1: self.myhash = tripconcat([0,0])
-			else: self.myhash = tripconcat([0,1])
-			self.myhash = hashfunc(self.myhash)
+			tripconcat = lambda x: self.children[x[0]].getHash().concat(BANT(self.ttl-1).concat(self.children[x[1]].getHash()))
+			if len(self.children) == 1: self.myhash = hashfunc(tripconcat([0,0]))
+			else: self.myhash = hashfunc(tripconcat([0,1]))
 			if self.parent != None: self.parent.getHash(True)
 		return self.myhash
 		
@@ -370,8 +369,8 @@ class HashTree:
 			
 			
 	def update(self, pos, val):
-		pass
-		
+		n = self.n
+		path = num2bits(math.ceil(math.log(n)/math.log(2)))[::-1]
 		
 			
 	def getHash(self):
@@ -437,8 +436,8 @@ class GPDHTChain(Forest):
 		blockInfoHash = self.hashBlockInfo(blockInfoTemplate)
 		blockInfoRLP = RLP_SERIALIZE(blockInfoTemplate)
 		target = unpackTarget(blockInfoTemplate[self.headerMap['target']])
-		message = "It was a bright cold day in April, and the clocks were striking thirteen."
-		nonce = self.hash(message)
+		message = BANT("It was a bright cold day in April, and the clocks were striking thirteen.")
+		nonce = message.getHash()
 		potentialTree = [blockInfoRLP, blockInfoRLP, message, nonce]
 		h = HashTree(potentialTree)
 		count = 0

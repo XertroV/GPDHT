@@ -62,7 +62,7 @@ app.logger.addHandler(log_handler)
 
 from hashlib import sha256
 from binascii import hexlify
-import json
+import json, math
 
 
 #==============================================================================
@@ -107,9 +107,8 @@ def friends():
 def alerts():
 	return json.dumps(knownAlerts)
 	
-@app.route("/<bant:chain>/topblock",methods=["GET"])
+@app.route("/<bant:chain>/topblock",methods=["POST"])
 def getTopBlock(chain):
-	print repr(chain)
 	return json.dumps([chains[chain].getTopBlock()])
 	
 @app.route("/<bant:chain>/newblock",methods=["POST"])
@@ -128,15 +127,17 @@ def getTrees(chain):
 		trees.append(db.getTreeFromRoot(root))
 	return json.dumps(trees)
 	
-@app.route("/<bant:chain>/sucessors",methods=["POST"])
+@app.route("/<bant:chain>/successors",methods=["POST"])
 def getSuccessors(chain):
 	blocklocator = json_loads(request.form['blocklocator'])
 	blocks = blocklocator['blocks']
 	if 'stop' in blocklocator: stop = blocklocator['stop']
 	else: stop = ''
-	return chains[chain].getSuccessors(blocks, stop)
 	
-@app.route("/<bant:chain>/alerts",methods=["GET"])
+	successors = chains[chain].getSuccessors(blocks, stop)
+	return json.dumps({'error':'', 'successors':successors})
+	
+@app.route("/<bant:chain>/alerts",methods=["POST"])
 def getChainAlerts(chain):
 	return json.dumps(knownAlerts[chain])
 	
@@ -148,9 +149,12 @@ def newAlert(chain):
 	db.recordAlert(chain, alert)
 	return json.dumps({'error':''})
 	
-@app.route("/<bant:chain>/getbranch/<bant:MR>/<bant:leaf>",methods=["GET"])
-def getBranch(chain, MR, leaf):
-	pass
+@app.route("/<bant:chain>/getbranch",methods=["POST"])
+def getBranch(chain):
+	merkleroot = json_loads(request.form['merkleroot'])
+	leaf = json_loads(request.form['leaf'])
+	branch = db.getBranchFromRoot(merkleroot, leaf)
+	return json.dumps({'error':'', 'branch':branch})
 	
 @app.route("/<bant:chain>/getentry",methods=["POST"])
 def getEntrys(chain):

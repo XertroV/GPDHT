@@ -37,6 +37,12 @@ class Test_HashTree(unittest.TestCase):
 			
 		]
 		
+		
+		a=HashTree([z32HN,z32HN])
+		print repr(a.root.children[0].getHash())
+		print repr(a.root.getHash())
+		print repr(a.getHash())
+		
 		for pair in testVectors:
 			self.assertEqual(pair[0], pair[1])
 			

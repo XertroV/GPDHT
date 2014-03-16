@@ -36,6 +36,14 @@ def sumIS(i,s): return i2s(s2i(s)+i)
 def sumSS(s1,s2): return i2s(s2i(s1)+s2i(s2))
 
 def sGT(s1, s2): return s2i(s1) > s2i(s2)
+
+def num2bits(n):
+	n = int(n)
+	r = []
+	while n > 0:
+		r.append(n%2)
+		n /= 2
+	return r[::-1]
 	
 	
 #==============================================================================
