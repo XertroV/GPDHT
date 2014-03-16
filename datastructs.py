@@ -563,8 +563,8 @@ class Node:
 		
 		self.about = None
 		
-	def sendMessage(self, path, msg, method="GET"):
-		fireHTTP(self, path, msg, method)
+	def sendMessage(self, path, msgdict, method="POST"):
+		fireHTTP(self, path, msgdict, method)
 		
 	def testAlive(self):
 		# TODO : request /about from node, true if recieved

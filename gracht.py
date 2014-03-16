@@ -117,7 +117,11 @@ def learnNewBlock(chain):
 	hashtree = HashTree(json_loads(request.form['hashtree']))
 	blockinfo = json_loads(request.form['blockinfo'])
 	print '/newblock - hashtree: %s, blockinfo: %s' % (repr(hashtree.leaves), repr(blockinfo))
-	return json.dumps({'success':chains[chain].addBlock(hashtree, blockinfo)})
+	if chains[chain].addBlock(hashtree, blockinfo):
+		for n in knownNodes:
+			n.sendMessage('/newblock', {'hashtree':hashtree.leaves(), 'blockinfo', blockinfo})
+		return json.dumps({'error':''})
+	return json.dumps({'error':'rejected'})
 	
 @app.route("/<bant:chain>/gettrees",methods=["POST"])
 def getTrees(chain):
