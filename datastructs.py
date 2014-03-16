@@ -31,7 +31,7 @@ class BANT:
 	def __init__(self, initString=b'\x00', fromHex=False, padTo=0):
 		if fromHex == True:
 			'''input should be a string in hex encoding'''
-			self.this = bytearray(initString.decode('hex')) # byte array
+			self.this = bytearray(initString.decode('hex'))
 		elif isinstance(initString, int):
 			self.this = BANT(i2s(initString)).this
 		elif isinstance(initString, BANT):
@@ -43,6 +43,7 @@ class BANT:
 			
 		self.isBANT = True
 		self.ttl = 0
+		self.parent = None
 	
 		
 	def __lt__(self, other):
@@ -118,6 +119,9 @@ class BANT:
 	def int(self):
 		return self.__int__()
 		
+	def setParent(self, parent):
+		self.parent = parent
+		
 		
 
 def DECODEBANT(s):
@@ -127,6 +131,11 @@ def ENCODEBANT(b):
 	return b.hex()
 	#return b58encode(b.str())
 	
+def ALL_BANT(l):
+	if isinstance(l, str):
+		return BANT(l)
+	elif isinstance(l, list):
+		return [ALL_BANT(i) for i in l]
 
 
 #==============================================================================
@@ -225,7 +234,9 @@ def json_str_to_bant(obj):
 	return obj
 	
 def json_loads(obj):
+	print 'json_loads:',obj
 	a = json.loads(obj)
+	print 'json_loads:', a
 	return json_str_to_bant(a)
 	
 
@@ -262,17 +273,16 @@ class FakeHashNode:
 	
 		
 class HashNode:
-	def __init__(self, children, ttl):
+	def __init__(self, children, ttl=None):
 		self.myhash = None
 		self.parent = None
 		self.children = children
-		if isinstance(children[0], HashNode):
-			self.ttl = children[0].ttl + 1
-			self.children[0].setParent(self)
-			if len(self.children) == 2: 
-				self.children[1].setParent(self)
-				assert children[0].ttl == children[1].ttl
-		else: self.ttl = ttl
+		self.ttl = children[0].ttl + 1
+		self.children[0].setParent(self)
+		if len(self.children) == 2: 
+			self.children[1].setParent(self)
+			assert children[0].ttl == children[1].ttl
+		if ttl != None: self.ttl = ttl
 		if len(children) < 1 or len(children) > 2: raise ValueError("HashNode: children must be a list/tuple of length 1 or 2")
 		self.getHash()
 		
@@ -301,8 +311,7 @@ class HashNode:
 			self.children.append(newchild)
 		else:
 			self.children[lr] = newchild
-		if isinstance(newchild, HashNode) or isinstance(newchild, FakeHashNode):
-			self.children[lr].setParent(self)
+		self.children[lr].setParent(self)
 		self.getHash(True)
 		
 	def setParent(self, parent):
@@ -321,13 +330,12 @@ class HashTree:
 		chunks = init
 		
 		while len(chunks) > 1:
-			ttl = chunks[0].ttl + 1
 			newChunks = []
 			for i in xrange(0,len(chunks),2):
-				newChunks.append(HashNode(chunks[i:i+2], ttl))
+				newChunks.append(HashNode(chunks[i:i+2]))
 			chunks = newChunks
 		self.root = chunks[0]
-		self.height = ttl
+		self.height = self.root.ttl
 		
 		
 	def doHash(self, msg):
@@ -349,36 +357,42 @@ class HashTree:
 			newFringe = [j for i in fringe for j in i.children]
 			fringe = newFringe
 		return fringe
+		
+	def pathToPos(self, pos):
+		length = int(math.ceil(math.log(self.n)/math.log(2)))
+		return num2bits(pos, length)
+		
+	def pos(self, pos):
+		n = self.n
+		path = self.pathToPos(pos)
+		node = self.root
+		for d in path:
+			node = node.children[d]
+		return node
 	
 	def append(self, v=BANT(chr(0))):	
-		if self.n == 1: self.root = HashNode([self.root, v], 1)
-		n = self.n
-		ttl = 0
-		a = v
-		while True:
-			if n % 2 == 1:
-				b = HashNode([self.rightmost(ttl), a], ttl+1)
-				if b.ttl > self.root.ttl: self.root = b
-				else: self.rightmost(ttl+2).setChild(1, b)
-				break
-			else:
-				ttl += 1
-				a = HashNode([a], ttl)
-				n /= 2
+		if self.n == 1: 
+			self.root = HashNode([self.root, v])
+		else:
+			n = self.n
+			a = v
+			ttl = 0
+			while True:
+				if n % 2 == 1:
+					b = HashNode([self.rightmost(ttl), a])
+					if b.ttl > self.root.ttl: self.root = b
+					else: self.rightmost(ttl+2).setChild(1, b)
+					break
+				else:
+					a = HashNode([a])
+					n /= 2
+					ttl += 1
 		self.n += 1
 		
 		
-	def remove(self, h):
-		pass
-			
-			
 	def update(self, pos, val):
-		n = self.n
-		length = int(math.ceil(math.log(n)/math.log(2)))
-		path = num2bits(pos, length)
-		node = self.root
-		for d in path[:-1]:
-			node = node.children[d]
+		node = self.pos(pos).parent
+		path = self.pathToPos(pos)
 		node.setChild(path[-1], val)
 		
 			
@@ -422,10 +436,11 @@ class Forest(object):
 		
 class GPDHTChain(Forest):
 	''' Holds a PoW chain and can answer queries '''
-	def __init__(self, genesisheader=None):
+	def __init__(self, genesisheader=None, db=None):
 		super(GPDHTChain, self).__init__()
 		self.initComplete = False
 		self.head = BANT(chr(0))
+		self.db = db
 		
 		self.headerMap = {
 			"version": 0,
@@ -441,13 +456,14 @@ class GPDHTChain(Forest):
 		else: self.setGenesis(self.mine(self.blockInfoTemplate()))
 		
 		
+		
 	def mine(self, blockInfoTemplate):
 		blockInfoHash = self.hashBlockInfo(blockInfoTemplate)
 		blockInfoRLP = RLP_SERIALIZE(blockInfoTemplate)
 		target = unpackTarget(blockInfoTemplate[self.headerMap['target']])
 		message = BANT("It was a bright cold day in April, and the clocks were striking thirteen.")
 		nonce = message.getHash()
-		potentialTree = [blockInfoRLP, blockInfoRLP, message, nonce]
+		potentialTree = [i.getHash() for i in [blockInfoRLP, blockInfoRLP, message, nonce]]
 		h = HashTree(potentialTree)
 		count = 0
 		while True:
@@ -496,6 +512,7 @@ class GPDHTChain(Forest):
 		self.genesisInfo = blockInfo
 		self.genesisTree = tree
 		self.genesisHash = tree.getHash()
+		self.appid = RLP_SERIALIZE(blockInfo).getHash()
 		
 		self.head = self.genesisTree.getHash()
 		
@@ -504,22 +521,27 @@ class GPDHTChain(Forest):
 	
 	def addBlock(self, block, blockInfo):
 		print 'addBlock: Potential block', block.getHash().hex()
-		print 'addBlock: block.leaves:', block.leaves
+		print 'addBlock: block.leaves:', block.leaves()
 		if self.initComplete == False:
 			assert blockInfo[self.headerMap['prevblock']] == BANT(bytearray(32))
 		else:
 			print 'addBlock: repr(prevblock):', repr(blockInfo[self.headerMap['prevblock']])
 			assert blockInfo[self.headerMap['prevblock']] in self.trees
 		h = self.hashBlockInfo(blockInfo)
-		assert h in block.leaves
+		print block.leaves()
+		print repr(block.pos(0))
+		print repr(self.genesisHash)
+		assert self.appid == block.pos(0)
+		assert h == block.pos(1)
 		print 'addBlock: NEW BLOCK', block.getHash().hex()
 		self.add(block)
 		
 		if self.initComplete == False:
 			self.initComplete = True
-			
-		# TODO : fire block to other nodes
-			
+		
+		self.db.dumpTree(block)
+		self.db.dumpList(blockInfo)
+		
 		return True
 		
 		
@@ -537,6 +559,10 @@ class GPDHTChain(Forest):
 		
 	def getTopBlock(self):
 		return self.head
+		
+		
+	def loadChain(self):
+		self.db.getSuccessors(self.genesisHash)
 		
 	
 	def learnOfDB(self, db):

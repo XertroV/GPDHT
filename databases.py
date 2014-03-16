@@ -18,41 +18,42 @@ class Redis(Database):
 		
 	def __postprocess(self, rt):
 		if rt == None: return chr(0)
-		else: return rt
-		
+		else: return rt	
+			
 	def pipeline(self): return self.r.pipeline()
-		
+			
 	# write
-	def set(self, key, value): return self.r.set(key, value)
+	def set(self, key, value): return self.r.set(key, str(value))
 	
-	def lpush(self, key, *values): return self.r.lpush(key, *values)
-	def lpushx(self, key, *values): return self.r.lpushx(key, *values)
-	def rpush(self, key, *values): return self.r.rpush(key, *values)
-	def rpushx(self, key, *values): return self.r.rpushx(key, *values)
+	def lpush(self, key, *values): return self.r.lpush(str(key), *strlist(values))
+	def lpushx(self, key, *values): return self.r.lpushx(str(key), *strlist(values))
+	def rpush(self, key, *values): return self.r.rpush(str(key), *strlist(values))
+	def rpushx(self, key, *values): return self.r.rpushx(str(key), *strlist(values))
 	
-	def delete(self, key): return self.r.delete(key)
+	def delete(self, key): return self.r.delete(str(key))
 	
 	# WARNING!
-	def flushdb(self): return self.r.flushdb()
+	def flushdb(self): return None # return self.r.flushdb()
 	
 	# read
 	def get(self, key): 
-		rt = self.r.get(key)
+		rt = self.r.get(str(key))
 		return self.__postprocess(rt)
 	
 	def lrange(self, key, start, stop):
-		rt = self.r.lrange(key, start, stop)
+		rt = self.r.lrange(str(key), int(start), int(stop))
 		return self.__postprocess(rt)
 		
 	def exists(self, key):
-		return self.r.exists(key)
+		return self.r.exists(str(key))
 		
 	def sismember(self, key, member):
-		return self.r.sismember(key, member)
+		return self.r.sismember(str(key), str(member))
 		
 	def llen(self, key):
-		return self.__postprocess(self.r.llen(key))
+		return self.__postprocess(self.r.llen(str(key)))
 		
 	def lindex(self, key, index):
-		return self.__postprocess(self.r.lindex(key, index))
-	
+		return self.__postprocess(self.r.lindex(str(key), int(index)))
+		
+		

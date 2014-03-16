@@ -51,6 +51,10 @@ def num2bits(n, minlen=0):
 	return r[::-1]
 	
 	
+def strlist(l):
+	return [str(i) for i in l]
+	
+	
 #==============================================================================
 # CRYPTO
 #==============================================================================
@@ -109,17 +113,16 @@ class ThreadWithArgs(threading.Thread):
 import requests
 
 
-def goGetHTTP(node, path, payload={}, method="GET"):
+def goGetHTTP(node, path, payload={}, method="POST"):
 	url = "http://%s:%d%s" % (node.ip, node.port, path)
-	print payload
 	if method == "POST":
 		r = requests.post(url, data=payload, proxies={"http":""})
 	else:
 		r = requests.get(url, proxies={"http":""})
-	print r.text
+	print 'goGetHTTP:', repr(r.text)
 	return r.text
 
-def fireHTTP(node, path, payload={}, method="GET"):
+def fireHTTP(node, path, payload={}, method="POST"):
 	t = ThreadWithArgs(goGetHTTP, node, path, payload, method)
 	t.start()
 	

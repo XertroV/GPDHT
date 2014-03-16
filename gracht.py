@@ -26,16 +26,6 @@ aboutInfo = {
 }
 
 
-
-# GPDHT config
-MainChain = GPDHTChain()
-chains = {MainChain.genesisHash : MainChain} # k: genesis block, v: Chain object
-subscribedTo = chains.keys() # list of genesis blocks
-knownNodes = dict(zip([x for x in subscribedTo],[set() for _ in subscribedTo])) # list of node objects
-knownAlerts = dict(zip([x for x in subscribedTo],[set() for _ in subscribedTo])) # list of known alerts
-
-
-
 #==============================================================================
 # IMPORTS
 #==============================================================================
@@ -65,25 +55,70 @@ from binascii import hexlify
 import json, math
 
 
+
 #==============================================================================
 # NETWORK
 #==============================================================================
 
 
-class Database:
+class GPDHTDatabase:
 	def __init__(self):
 		import redis
 		self.r = redis.StrictRedis(host='localhost', port=6379, db=dbnum)
 		self.dbPre = dbPre
+		
+	def path(self, p):
+		return '%s:%s' % (self.dbPre, str(p))
+		
 	def exists(self,toTest):
-		return self.r.exists('%s:%s' % (self.dbPre,toTest))
+		return self.r.exists(self.path(toTest))
 	def set(self,toSet,value):
-		return self.r.set('%s:%s' % (self.dbPre,toSet),value)
-	def get(self,toGet):
-		return self.r.get('%s:%s' % (self.dbPre,toGet))
-	def rpush(self,toPush, value):
-		return self.r.rpush('%s:%s' % (self.dbPre,toPush), value)
-
+		return self.r.set(self.path(toSet),value)
+	#def get(self,toGet):
+	#	return self.r.get(self.pattoGet))
+	def rpush(self, toPush, value):
+		return self.r.rpush(self.path(toPush), value)
+	def lrange(self, key, a, b):
+		print 'lrange',key
+		return self.r.lrange(self.path(key), int(a), int(b))
+	
+	# read (higher)
+	
+	def getEntry(self, toGet):
+		return ALL_BANT(self.lrange(toGet,0,-1))
+		
+	def getSuccessors(self, blockhash):
+		s = []
+		t = 0
+		while self.exists(blockhash + BANT(2**t)):
+			s.append(self.getEntry(blockhash + BANT(2**t)))
+			t += 1
+		return ALL_BANT(s)
+		
+	def getAncestors(self, blockhash):
+		a = []
+		t = 0
+		while self.exists(blockhash - BANT(2**t)):
+			a.append(self.getEntry(blockhash - BANT(2**t)))
+			t += 1
+		return ALL_BANT(a)
+	
+	# write (higher level)
+	
+	def dumpList(self, l, h=None):
+		print 'dumpList', repr(h), repr(l)
+		if h == None:
+			h = hashfunc(RLP_SERIALIZE(l))
+		p = self.r.pipeline()
+		p.delete(self.path(h))
+		p.rpush(self.path(h), *l)
+		p.execute()
+	
+	def dumpTree(self, tree):
+		self.dumpList(tree.leaves(), tree.getHash())
+	
+		
+	
 
 #==============================================================================
 # ROUTES / MESSAGES
@@ -91,19 +126,19 @@ class Database:
 
 		
 
-@app.route("/about")	
+@app.route("/about",methods=["POST"])	
 def about():
 	return json.dumps(aboutInfo)
 	
-@app.route("/list")
+@app.route("/list",methods=["POST"])
 def list():
 	return json.dumps(subscribedTo)
 	
-@app.route("/friends")
+@app.route("/friends",methods=["POST"])
 def friends():
 	return json.dumps(knownNodes)
 	
-@app.route("/alerts")
+@app.route("/alerts",methods=["POST"])
 def alerts():
 	return json.dumps(knownAlerts)
 	
@@ -118,8 +153,9 @@ def learnNewBlock(chain):
 	blockinfo = json_loads(request.form['blockinfo'])
 	print '/newblock - hashtree: %s, blockinfo: %s' % (repr(hashtree.leaves), repr(blockinfo))
 	if chains[chain].addBlock(hashtree, blockinfo):
-		for n in knownNodes:
-			n.sendMessage('/newblock', {'hashtree':hashtree.leaves(), 'blockinfo', blockinfo})
+		for n in knownNodes[chain]:
+			print repr(n)
+			n.sendMessage('/newblock', {'hashtree':hashtree.leaves(), 'blockinfo':blockinfo})
 		return json.dumps({'error':''})
 	return json.dumps({'error':'rejected'})
 	
@@ -160,12 +196,14 @@ def getBranch(chain):
 	branch = db.getBranchFromRoot(merkleroot, leaf)
 	return json.dumps({'error':'', 'branch':branch})
 	
-@app.route("/<bant:chain>/getentry",methods=["POST"])
-def getEntrys(chain):
+@app.route("/<bant:chain>/getentries",methods=["POST"])
+def getEntries(chain):
+	print 'getEntries:',request.form['entries']
 	entries = json_loads(request.form['entries'])
 	response = []
 	for entryHash in entries:
 		response.append( db.getEntry(entryHash) )
+	print 'getEntries:',response
 	return json.dumps(response)
 	
 @app.route("/<bant:chain>/subscribe",methods=["POST"])
@@ -177,11 +215,16 @@ def subscribeNode(chain):
 	return json.dumps({'error':''})
 	
 	
-	
-	
+
+db = GPDHTDatabase()
+
+# GPDHT config
+MainChain = GPDHTChain(db=db)
+chains = {MainChain.genesisHash : MainChain} # k: genesis block, v: Chain object
+subscribedTo = chains.keys() # list of genesis blocks
+knownNodes = dict(zip([x for x in subscribedTo],[set() for _ in subscribedTo])) # list of node objects
+knownAlerts = dict(zip([x for x in subscribedTo],[set() for _ in subscribedTo])) # list of known alerts
 	
 
 if __name__ == "__main__":
-	db = Database()
-	MainChain.learnOfDB(db)
 	app.run(host=bindto, port=hostport)
