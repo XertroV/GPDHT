@@ -12,13 +12,13 @@ def dsha256(msg):
 
 
 z32 = BANT('', padTo=32)
-z32HN = FakeHashNode(0, z32)
+z32HN = FakeHashNode(z32, 0)
 
 class Test_HashTree(unittest.TestCase):
 	def test_hashNode(self):
 		testVectors = [
 			( hashfunc(z32.concat(BANT('\x00').concat(z32))), BANT('98ce42deef51d40269d542f5314bef2c7468d401ad5d85168bfab4c0108f75f7', True) ),
-			( HashNode(0, [z32HN, z32HN]).getHash(), BANT('98ce42deef51d40269d542f5314bef2c7468d401ad5d85168bfab4c0108f75f7', True) )
+			( HashNode([z32HN, z32HN], 1).getHash(), BANT('98ce42deef51d40269d542f5314bef2c7468d401ad5d85168bfab4c0108f75f7', True) )
 		]
 		
 		for pair in testVectors:
@@ -30,6 +30,7 @@ class Test_HashTree(unittest.TestCase):
 		a = HashTree([z32,z32])	
 		abcd = HashTree([BANT(i) for i in ['a','b','c','d']])
 		abc = HashTree([BANT(i) for i in ['a','b','c']])
+		abdd = HashTree([BANT(i) for i in ['a','b','d','d']])
 		testVectors = [
 			( HashTree([z32HN,z32HN]).getHash(), BANT('98ce42deef51d40269d542f5314bef2c7468d401ad5d85168bfab4c0108f75f7', True) ),
 			( HashTree([z32,z32]).getHash(), BANT('24585a8ee00325799523c26a6c99467682ee561fd6a2e5a3d9088c0611da61b0', True) ),
@@ -37,18 +38,15 @@ class Test_HashTree(unittest.TestCase):
 			
 		]
 		
-		
-		a=HashTree([z32HN,z32HN])
-		print repr(a.root.children[0].getHash())
-		print repr(a.root.getHash())
-		print repr(a.getHash())
-		
 		for pair in testVectors:
 			self.assertEqual(pair[0], pair[1])
-			
-			
-		abc.append(BANT('d'))
+		
+		abc.append(BANT('d'))		
 		self.assertEqual(abc, abcd)
+	
+		abc.update(2, BANT('d'))
+		self.assertEqual(abc, abdd)
+		
 			
 		a.append(z32)
 		

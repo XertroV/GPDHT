@@ -26,6 +26,7 @@ def i2s(i):
 	return i2h(i).decode('hex')
 	
 def i2h(i):
+	assert i >= 0
 	h = i.__format__('x')
 	return '0'*(len(h)%2)+h
 	
@@ -37,12 +38,16 @@ def sumSS(s1,s2): return i2s(s2i(s1)+s2i(s2))
 
 def sGT(s1, s2): return s2i(s1) > s2i(s2)
 
-def num2bits(n):
+def num2bits(n, minlen=0):
 	n = int(n)
 	r = []
 	while n > 0:
 		r.append(n%2)
 		n /= 2
+	pad = minlen - len(r)
+	while pad > 0:
+		r.append(0)
+		pad -= 1
 	return r[::-1]
 	
 	

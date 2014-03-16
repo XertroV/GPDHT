@@ -1,4 +1,4 @@
-import time
+import time, math
 
 from hashlib import sha256
 from utilities import *
@@ -238,7 +238,7 @@ def json_loads(obj):
 		
 class FakeHashNode:
 	''' FakeHashNode should be used when the *hash* is known but the children are not. '''
-	def __init__(self, ttl, h):
+	def __init__(self, h, ttl):
 		self.myhash = h
 		self.ttl = ttl
 		self.parent = None
@@ -262,7 +262,7 @@ class FakeHashNode:
 	
 		
 class HashNode:
-	def __init__(self, ttl, children):
+	def __init__(self, children, ttl):
 		self.myhash = None
 		self.parent = None
 		self.children = children
@@ -297,7 +297,12 @@ class HashNode:
 		return self.children[lr]
 		
 	def setChild(self, lr, newchild):
-		self.children[lr] = newchild
+		if lr >= len(self.children):
+			self.children.append(newchild)
+		else:
+			self.children[lr] = newchild
+		if isinstance(newchild, HashNode) or isinstance(newchild, FakeHashNode):
+			self.children[lr].setParent(self)
 		self.getHash(True)
 		
 	def setParent(self, parent):
@@ -315,13 +320,12 @@ class HashTree:
 		
 		chunks = init
 		
-		ttl = 1
 		while len(chunks) > 1:
+			ttl = chunks[0].ttl + 1
 			newChunks = []
 			for i in xrange(0,len(chunks),2):
-				newChunks.append(HashNode(ttl, chunks[i:i+2]))
+				newChunks.append(HashNode(chunks[i:i+2], ttl))
 			chunks = newChunks
-			ttl += 1
 		self.root = chunks[0]
 		self.height = ttl
 		
@@ -335,7 +339,7 @@ class HashTree:
 		while True:
 			if w.ttl == ttl: return w
 			if w.ttl <= 0: raise ValueError("HashTree.rightmost: ttl provided is outside bounds")
-			w = w.children[1]
+			w = w.children[ len(w.children)-1 ]
 		
 		
 	def leaves(self):
@@ -347,19 +351,19 @@ class HashTree:
 		return fringe
 	
 	def append(self, v=BANT(chr(0))):	
-		if self.n == 1: self.root = HashNode(1, [self.root, v])
+		if self.n == 1: self.root = HashNode([self.root, v], 1)
 		n = self.n
 		ttl = 0
 		a = v
 		while True:
 			if n % 2 == 1:
-				b = HashNode(ttl+1, [self.rightmost(ttl), a])
+				b = HashNode([self.rightmost(ttl), a], ttl+1)
 				if b.ttl > self.root.ttl: self.root = b
-				else: self.rightmost(ttl+1).setChild(1, b)
+				else: self.rightmost(ttl+2).setChild(1, b)
 				break
 			else:
 				ttl += 1
-				a = HashNode(ttl, [a])
+				a = HashNode([a], ttl)
 				n /= 2
 		self.n += 1
 		
@@ -370,11 +374,16 @@ class HashTree:
 			
 	def update(self, pos, val):
 		n = self.n
-		path = num2bits(math.ceil(math.log(n)/math.log(2)))[::-1]
+		length = int(math.ceil(math.log(n)/math.log(2)))
+		path = num2bits(pos, length)
+		node = self.root
+		for d in path[:-1]:
+			node = node.children[d]
+		node.setChild(path[-1], val)
 		
 			
-	def getHash(self):
-		return self.root.getHash()
+	def getHash(self, force=False):
+		return self.root.getHash(force)
 		
 	def __str__(self):
 		return str(self.myhash)
