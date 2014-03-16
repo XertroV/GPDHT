@@ -42,6 +42,7 @@ class BANT:
 		while padTo - len(self.this) > 0: self.this = bytearray([0]) + self.this
 			
 		self.isBANT = True
+		self.ttl = 0
 	
 		
 	def __lt__(self, other):
@@ -234,27 +235,62 @@ def json_loads(obj):
 # HashTree
 #==============================================================================
 		
+		
+class FakeHashNode:
+	''' FakeHashNode should be used when the *hash* is known but the children are not. '''
+	def __init__(self, ttl, h):
+		self.myhash = h
+		self.ttl = ttl
+		self.parent = None
+		
+	def getHash(self):
+		return self.myhash
+		
+	def setParent(self, parent):
+		self.parent = parent
+		return True
+		
+	def setChild(self, lr, newchild):
+		raise TypeError("Type FakeHashNode can have no children")
+		
+	def getChild(self, lr):
+		raise TypeError("Type FakeHashNode has no known children")
+		
+	def __len__(self):
+		return len(self.getHash())
+	
+	
+		
 class HashNode:
 	def __init__(self, ttl, children):
 		self.myhash = None
 		self.parent = None
 		self.children = children
 		if isinstance(children[0], HashNode):
-			if len(children) == 1: self.children += children
-			self.ttl = children[0].ttl
-			assert children[0].ttl == children[1].ttl
-		elif len(children) < 1 or len(children) > 2: raise ValueError("HashNode: children must be a list/tuple of length 1 or 2")
+			self.ttl = children[0].ttl + 1
+			self.children[0].setParent(self)
+			if len(self.children) == 2: 
+				self.children[1].setParent(self)
+				assert children[0].ttl == children[1].ttl
 		else: self.ttl = ttl
+		if len(children) < 1 or len(children) > 2: raise ValueError("HashNode: children must be a list/tuple of length 1 or 2")
 		self.getHash()
-		if not isinstance(children[0], BANT):
-			_ = [self.children[0].setParent(self), self.children[1].setParent(self)]
+		
+	
+	def __eq__(self, other):
+		if len(self.children) == len(other.children) and self.ttl == other.ttl and self.children[0] == other.children[0]:
+			if len(self.children) == 2 and self.children[1] == other.children[1]:
+				return True
+		return False
+	
 		
 	def getHash(self, force=False):
 		if self.myhash == None or force:
 			# p0.hash ++ ttl ++ p1.hash
-			tripconcathash = lambda x: hashfunc(self.children[x[0]].getHash().concat(BANT(self.ttl).concat(self.children[x[1]].getHash())))
-			if len(self.children) == 1: self.myhash = tripconcathash([0,0])
-			else: self.myhash = tripconcathash([0,1])
+			tripconcat = lambda x: self.children[x[0]].getHash().concat(BANT(self.ttl).concat(self.children[x[1]].getHash()))
+			if len(self.children) == 1: self.myhash = tripconcat([0,0])
+			else: self.myhash = tripconcat([0,1])
+			self.myhash = hashfunc(self.myhash)
 			if self.parent != None: self.parent.getHash(True)
 		return self.myhash
 		
@@ -262,29 +298,29 @@ class HashNode:
 		return self.children[lr]
 		
 	def setChild(self, lr, newchild):
-		self.child[lr] = newchild
+		self.children[lr] = newchild
 		self.getHash(True)
 		
 	def setParent(self, parent):
 		self.parent = parent
+		return True
+		
+	def __len__(self):
+		return len(self.getHash())
 		
 		
 class HashTree:
-	def __init__(self, init, hashFirst=False):		
+	def __init__(self, init):		
 		assert len(init) > 0
+		self.n = len(init)
 		
-		if hashFirst: 
-			leaves = [self.doHash(BANT(i)) for i in init]
-		else:
-			if False in [len(i) == 32 for i in init]: raise ValueError("HashTree: if hashFirst=False then initialization leaves must all be 32 bytes")
-			leaves = init
+		chunks = init
 		
-		chunks = leaves
-		ttl = 0
+		ttl = 1
 		while len(chunks) > 1:
 			newChunks = []
 			for i in xrange(0,len(chunks),2):
-				newChunks.append(HashNode(ttl, leaves[i:i+2]))
+				newChunks.append(HashNode(ttl, chunks[i:i+2]))
 			chunks = newChunks
 			ttl += 1
 		self.root = chunks[0]
@@ -302,11 +338,20 @@ class HashTree:
 			if w.ttl <= 0: raise ValueError("HashTree.rightmost: ttl provided is outside bounds")
 			w = w.children[1]
 		
+		
+	def leaves(self):
+		w = self.root
+		fringe = [w]
+		while fringe[0].ttl != 0:
+			newFringe = [j for i in fringe for j in i.children]
+			fringe = newFringe
+		return fringe
 	
-	def append(self, v=BANT('00')):			
-		n = self.n-1
+	def append(self, v=BANT(chr(0))):	
+		if self.n == 1: self.root = HashNode(1, [self.root, v])
+		n = self.n
 		ttl = 0
-		a = HashNode(ttl, [v])
+		a = v
 		while True:
 			if n % 2 == 1:
 				b = HashNode(ttl+1, [self.rightmost(ttl), a])
@@ -322,19 +367,10 @@ class HashTree:
 		
 	def remove(self, h):
 		pass
-		if h not in self.leaves:
-			return False
-		else:
-			self.leaves.remove(h)
-			self.recalcHash()
-			return True
 			
 			
 	def update(self, pos, val):
 		pass
-		if int(pos) >= len(self.leaves): raise ValueError("HashTree.update: 'pos' out of range.")
-		self.leaves[pos] = val[:]
-		self.recalcHash() # todo : make not terrible
 		
 		
 			
@@ -369,7 +405,7 @@ class Forest(object):
 		self.trees = set()
 		
 	def add(self, tree):
-		assert isinstance(tree, Hashtree)
+		assert isinstance(tree, HashTree)
 		self.trees.add(tree)
 		
 	def remove(self, tree):
@@ -404,7 +440,7 @@ class GPDHTChain(Forest):
 		message = "It was a bright cold day in April, and the clocks were striking thirteen."
 		nonce = self.hash(message)
 		potentialTree = [blockInfoRLP, blockInfoRLP, message, nonce]
-		h = HashTree(potentialTree, hashFirst=True)
+		h = HashTree(potentialTree)
 		count = 0
 		while True:
 			count += 1
@@ -469,7 +505,7 @@ class GPDHTChain(Forest):
 		h = self.hashBlockInfo(blockInfo)
 		assert h in block.leaves
 		print 'addBlock: NEW BLOCK', block.getHash().hex()
-		self.trees.add(block)
+		self.add(block)
 		
 		if self.initComplete == False:
 			self.initComplete = True
