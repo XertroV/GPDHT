@@ -136,6 +136,8 @@ def ALL_BANT(l):
 		return BANT(l)
 	elif isinstance(l, list):
 		return [ALL_BANT(i) for i in l]
+	else:
+		return l
 
 
 #==============================================================================
@@ -230,7 +232,8 @@ def json_str_to_bant(obj):
 	if isinstance(obj, dict):
 		rt = {}
 		for k,v in obj.iteritems():
-			rt[json_str_to_bant(k)] = json_str_to_bant(v)
+			rt[k] = json_str_to_bant(v)
+		return rt
 	return obj
 	
 def json_loads(obj):
@@ -436,19 +439,22 @@ class Forest(object):
 		
 class GPDHTChain(Forest):
 	''' Holds a PoW chain and can answer queries '''
+	headerMap = dict([(title,n) for n,title in enumerate(["version", "height", "prevblock", "uncles", "target", "timestamp", "votes"])])
+	_blockInfoTemplate = [
+			BANT(1,padTo=4), # version
+			BANT(0,padTo=4), # height
+			BANT(bytearray(32)), # prevblock
+			BANT(bytearray(32)), # uncles
+			BANT(b'\xff\xff\xff\x01'), # target
+			BANT(int(time.time()), padTo=6), # timestamp
+			BANT(0, padTo=4), # votes
+		]
+	
 	def __init__(self, genesisheader=None, db=None):
 		super(GPDHTChain, self).__init__()
 		self.initComplete = False
 		self.head = BANT(chr(0))
 		self.db = db
-		
-		self.headerMap = {
-			"version": 0,
-			"prevblock": 1,
-			"uncles": 2,
-			"target": 3,
-			"timestamp":4,
-		}
 		
 		self.decs = {}
 		self.hashfunc = hashfunc
@@ -480,14 +486,7 @@ class GPDHTChain(Forest):
 		
 	
 	def blockInfoTemplate(self):
-		return [
-			BANT(b'\x00\x01'),
-			BANT(bytearray(32)),
-			BANT(bytearray(32)),
-			BANT(b'\xff\xff\xff\x01'),
-			BANT(int(time.time()), padTo=6),
-			BANT('', padTo=4)
-		]
+		return self._blockInfoTemplate
 			
 	
 	
@@ -520,6 +519,9 @@ class GPDHTChain(Forest):
 		
 	
 	def addBlock(self, block, blockInfo):
+		if self.db.exists(block.getHash()): 
+			print 'addBlock: %s already acquired' % block.getHash().hex()
+			return 'Exists'
 		print 'addBlock: Potential block', block.getHash().hex()
 		print 'addBlock: block.leaves:', block.leaves()
 		if self.initComplete == False:
@@ -541,6 +543,7 @@ class GPDHTChain(Forest):
 		
 		self.db.dumpTree(block)
 		self.db.dumpList(blockInfo)
+		self.db.setAncestors(block, blockInfo[self.headerMap['prevblock']])
 		
 		return True
 		
@@ -554,7 +557,7 @@ class GPDHTChain(Forest):
 	
 	def getSuccessors(self, blocks, stop):
 		# TODO : find HCB and then some successors until stop or max num
-		pass
+		return [self.db.getSuccessors(b) for b in blocks]
 		
 		
 	def getTopBlock(self):

@@ -67,6 +67,10 @@ class GPDHTDatabase:
 		self.r = redis.StrictRedis(host='localhost', port=6379, db=dbnum)
 		self.dbPre = dbPre
 		
+	def __pp(self, rt):
+		if rt == None: return BANT(chr(0))
+		else: return rt	
+		
 	def path(self, p):
 		return '%s:%s' % (self.dbPre, str(p))
 		
@@ -79,8 +83,7 @@ class GPDHTDatabase:
 	def rpush(self, toPush, value):
 		return self.r.rpush(self.path(toPush), value)
 	def lrange(self, key, a, b):
-		print 'lrange',key
-		return self.r.lrange(self.path(key), int(a), int(b))
+		return self.__pp(self.r.lrange(self.path(key), int(a), int(b)))
 	
 	# read (higher)
 	
@@ -90,9 +93,11 @@ class GPDHTDatabase:
 	def getSuccessors(self, blockhash):
 		s = []
 		t = 0
+		print 'getSuccessors:', repr(blockhash)
 		while self.exists(blockhash + BANT(2**t)):
 			s.append(self.getEntry(blockhash + BANT(2**t)))
 			t += 1
+		print 'getSuccessors:', ALL_BANT(s)
 		return ALL_BANT(s)
 		
 	def getAncestors(self, blockhash):
@@ -104,6 +109,22 @@ class GPDHTDatabase:
 		return ALL_BANT(a)
 	
 	# write (higher level)
+	
+	def linkAnc(self, young, old, diff):
+		self.rpush(young - diff, old)
+		self.rpush(old + diff, young)
+	
+	def setAncestors(self, block, prevblockhash):
+		s = 0
+		h = block.getHash()
+		cur = prevblockhash
+		if cur == 0: return True # genesis block
+		self.linkAnc(h, cur, 2**s)
+		while self.exists(cur - 2**s):
+			cur = self.getEntry(cur - 2**s)[0]
+			s += 1
+			self.linkAnc(h, cur, 2**s)
+		
 	
 	def dumpList(self, l, h=None):
 		print 'dumpList', repr(h), repr(l)
@@ -152,12 +173,13 @@ def learnNewBlock(chain):
 	hashtree = HashTree(json_loads(request.form['hashtree']))
 	blockinfo = json_loads(request.form['blockinfo'])
 	print '/newblock - hashtree: %s, blockinfo: %s' % (repr(hashtree.leaves), repr(blockinfo))
-	if chains[chain].addBlock(hashtree, blockinfo):
+	added = chains[chain].addBlock(hashtree, blockinfo)
+	if added == True:
 		for n in knownNodes[chain]:
 			print repr(n)
 			n.sendMessage('/newblock', {'hashtree':hashtree.leaves(), 'blockinfo':blockinfo})
 		return json.dumps({'error':''})
-	return json.dumps({'error':'rejected'})
+	return json.dumps({'error':added})
 	
 @app.route("/<bant:chain>/gettrees",methods=["POST"])
 def getTrees(chain):
@@ -169,11 +191,12 @@ def getTrees(chain):
 	
 @app.route("/<bant:chain>/successors",methods=["POST"])
 def getSuccessors(chain):
+	print './successors, blocklocator:', repr(request.form['blocklocator'])
 	blocklocator = json_loads(request.form['blocklocator'])
 	blocks = blocklocator['blocks']
 	if 'stop' in blocklocator: stop = blocklocator['stop']
 	else: stop = ''
-	
+	print './successors:',repr(blocks)
 	successors = chains[chain].getSuccessors(blocks, stop)
 	return json.dumps({'error':'', 'successors':successors})
 	
