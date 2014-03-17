@@ -445,10 +445,11 @@ class GPDHTChain(Forest):
 			BANT(0,padTo=4), # height
 			BANT(bytearray(32)), # prevblock
 			BANT(bytearray(32)), # uncles
-			BANT(b'\xff\xff\xff\x01'), # target
+			BANT(b'\x0f\xff\xff\x01'), # target
 			BANT(int(time.time()), padTo=6), # timestamp
 			BANT(0, padTo=4), # votes
 		]
+	_target1 = BANT(2**256-1)
 	
 	def __init__(self, genesisheader=None, db=None):
 		super(GPDHTChain, self).__init__()
@@ -514,10 +515,12 @@ class GPDHTChain(Forest):
 		self.appid = RLP_SERIALIZE(blockInfo).getHash()
 		
 		self.head = self.genesisTree.getHash()
+		self.headInfo = self.genesisInfo
 		
 		self.addBlock(tree, blockInfo)
 		
-	
+		
+	# added cumulative difficulty stuff, need to test
 	def addBlock(self, block, blockInfo):
 		if self.db.exists(block.getHash()): 
 			print 'addBlock: %s already acquired' % block.getHash().hex()
@@ -526,15 +529,22 @@ class GPDHTChain(Forest):
 		print 'addBlock: block.leaves:', block.leaves()
 		if self.initComplete == False:
 			assert blockInfo[self.headerMap['prevblock']] == BANT(bytearray(32))
+			hcdiff = BANT(0)
 		else:
 			print 'addBlock: repr(prevblock):', repr(blockInfo[self.headerMap['prevblock']])
 			assert blockInfo[self.headerMap['prevblock']] in self.trees
+			hcdiff = self.cumulativeDifficulty(self.headInfo)
+		cdiff = self.cumulativeDifficulty(blockInfo)
+		if hcdiff < cdiff:
+			self.head = block.getHash()
+			self.headInfo = blockInfo
 		h = self.hashBlockInfo(blockInfo)
 		print block.leaves()
 		print repr(block.pos(0))
 		print repr(self.genesisHash)
 		assert self.appid == block.pos(0)
 		assert h == block.pos(1)
+		
 		print 'addBlock: NEW BLOCK', block.getHash().hex()
 		self.add(block)
 		
@@ -544,10 +554,27 @@ class GPDHTChain(Forest):
 		self.db.dumpTree(block)
 		self.db.dumpList(blockInfo)
 		self.db.setAncestors(block, blockInfo[self.headerMap['prevblock']])
+		self.db.setEntry(block.getHash() + blockInfo[self.headerMap['target']], [cdiff]) # note, because of this target cannot equal 0 or be a power of 2.
 		
 		return True
 		
+	def headInfo(self):
+		print self.db.getEntry(self.head)
+		return self.db.getEntry(self.db.getEntry(self.head)[1])
 		
+	# need to test
+	def cumulativeDifficulty(self, blockInfo):
+		prevblock = blockInfo[self.headerMap['prevblock']]
+		if prevblock == 0:
+			return BANT(0)
+		prevBlockList = self.db.getEntry(prevblock)
+		prevBlockInfo = self.db.getEntry(prevBlockList[1])
+		prevCumulativeDifficulty = self.db.getEntry(prevBlockInfo[self.headerMap['target']] + prevblock)[0]
+		target = blockInfo[self.headerMap['target']]
+		diff = self._target1 / unpackTarget(target)
+		cdiff = prevCumulativeDifficulty + diff
+		print repr(cdiff)
+		return cdiff
 	
 	
 	def validAlert(self, alert):

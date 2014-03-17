@@ -110,6 +110,10 @@ class GPDHTDatabase:
 	
 	# write (higher level)
 	
+	def setEntry(self, toSet, stuff):
+		self.r.delete(self.path(toSet))
+		self.r.rpush(self.path(toSet), *stuff)
+	
 	def linkAnc(self, young, old, diff):
 		self.rpush(young - diff, old)
 		self.rpush(old + diff, young)
@@ -137,8 +141,7 @@ class GPDHTDatabase:
 	
 	def dumpTree(self, tree):
 		self.dumpList(tree.leaves(), tree.getHash())
-	
-		
+			
 	
 
 #==============================================================================
