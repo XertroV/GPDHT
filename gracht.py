@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 ''' Author: Max Kaye 
-About: Gracht is the reference implementation of GPDHT over HTTP.
+About: Gracht is the reference implementation of GPDHT.
 License: Undecided '''
 
 
@@ -250,7 +250,8 @@ chains = {MainChain.genesisHash : MainChain} # k: genesis block, v: Chain object
 subscribedTo = chains.keys() # list of genesis blocks
 knownNodes = dict(zip([x for x in subscribedTo],[set() for _ in subscribedTo])) # list of node objects
 knownAlerts = dict(zip([x for x in subscribedTo],[set() for _ in subscribedTo])) # list of known alerts
-	
+
+
 
 if __name__ == "__main__":
 	app.run(host=bindto, port=hostport)
